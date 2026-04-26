@@ -300,3 +300,31 @@ and re-sync. No separate install script.
 - Never write a long file in a single shot. Use the chunked write
   protocol from CLAUDE.md §3.5 (seed + append) for any artefact over
   ~150 lines.
+
+## 14. Milestones
+
+| ID  | Deliverable                                              | Exit criterion                                    |
+|-----|----------------------------------------------------------|---------------------------------------------------|
+| M1  | Repo scaffold, `pyproject.toml`, lint + mypy + pytest     | `uv sync && pytest -q` passes on empty tests      |
+| M2  | `engine/db/` schema + indexer + query                    | Can write & query 1k pages locally                |
+| M3  | `engine/workers/http_worker.py` + resilience             | Yahoo Finance JSON endpoint passes integration    |
+| M4  | `engine/workers/browser_worker.py` (Playwright stealth)  | Headless extract on SPA fixture                   |
+| M5  | `engine/workers/crawl_worker.py` + checkpoint            | Domain sweep on local fixture, resumes after kill |
+| M6  | `server.py` + Basic tier (5 tools)                       | LM Studio loads tools, all four roles green       |
+| M7  | Query tier + Crawl tier                                  | All 15 tools schema-validate < 700 tokens         |
+| M8  | `mcp.json` self-update + README + CI                     | `git clone` + first launch works on a clean box   |
+
+## 15. Out of Scope
+
+- Backwards compatibility with `krawl.ts` CLI flags — Python CLI is
+  optional and minimal.
+- Cluster / distributed crawl coordination. Parallel instances stay
+  fully independent (one SQLite per instance), as in krawl.
+- Any LLM call inside the engine. Intelligence stays on the model side.
+- Cookies / login flows beyond per-task header injection.
+
+## 16. References
+
+- Source engine: <https://github.com/azzindani/krawl>
+- Krawl architecture: `docs/ARCHITECTURE.md` in the krawl repo
+- Standard: <https://github.com/azzindani/Standards/blob/main/local_mcp/STANDARDS.md>
