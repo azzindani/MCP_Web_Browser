@@ -13,10 +13,15 @@ Any deviation must be justified inline.
 ## 1. Mission
 
 ```
-One engine. Any URL. Any scale. Zero LLM in the engine. Zero cloud.
-The model decides what to fetch and when. The MCP server fetches it
-synchronously, returns a surgical confirmation, and persists the
-result to a local SQLite file the model can query later.
+End-to-end web access for a local LLM in one MCP server:
+
+  web search  →  URL probe  →  HTTP / API fetch  →  DOM / SPA render
+              →  domain crawl  →  SQLite knowledge base  →  FTS query
+
+The model decides what to look up and when. The MCP server runs each
+short bounded step synchronously, returns a surgical confirmation, and
+persists every result to a local SQLite file the model can query later.
+Zero LLM in the engine. Zero cloud APIs.
 ```
 
 ## 2. Non-Negotiable Constraints
@@ -49,6 +54,7 @@ core/timer.ts                         →   engine/core/timer.py
 workers/http.ts                       →   engine/workers/http_worker.py
 workers/browser.ts                    →   engine/workers/browser_worker.py
 workers/crawl.ts                      →   engine/workers/crawl_worker.py
+(new — not in krawl)                  →   engine/workers/search_worker.py
 workers/fingerprint.ts                →   engine/workers/fingerprint.py
 workers/tls.ts                        →   engine/workers/tls.py
 resilience/circuit_breaker.ts         →   engine/resilience/circuit_breaker.py
@@ -81,6 +87,23 @@ tasks/*.json                          →   tasks/*.json   (unchanged format)
 Total runtime deps: **6** (cap = 7 per `dependency policy`).
 No deps with native build steps beyond Playwright's bundled Chromium.
 
+### 4.1 Web search backends (no API keys)
+
+`engine/workers/search_worker.py` runs entirely on the existing HTTP /
+browser workers — **no new dependency**. Backends are tried in order
+until one returns results:
+
+| Order | Backend                    | Transport     | Auth   |
+|-------|----------------------------|---------------|--------|
+| 1     | Self-hosted SearXNG        | `httpx` JSON  | none   |
+| 2     | DuckDuckGo HTML endpoint   | `httpx` HTML  | none   |
+| 3     | Brave Search HTML endpoint | `httpx` HTML  | none   |
+| 4     | Browser-rendered fallback  | Playwright    | none   |
+
+Backend URL is taken from `MCP_SEARCH_BACKEND` (default
+`http://127.0.0.1:8888` for SearXNG). All requests pass through the
+same circuit-breaker / rate-limiter / retry layer as any other URL.
+
 ## 5. Repository Layout
 
 ```
@@ -107,6 +130,7 @@ mcp_web_browser/
 │   │   ├── http_worker.py
 │   │   ├── browser_worker.py
 │   │   ├── crawl_worker.py
+│   │   ├── search_worker.py    ← web search (SearXNG / DDG / Brave)
 │   │   ├── fingerprint.py
 │   │   └── tls.py
 │   ├── resilience/
@@ -141,21 +165,38 @@ mcp_web_browser/
 
 ## 6. Just-In-Time Execution Model
 
+End-to-end browsing is composed by the model from short tool calls.
+Typical flow (each line is one MCP round-trip):
+
 ```
 LLM turn                       MCP server                      Engine
 ────────                       ──────────                      ──────
-call browse_fetch(url)   ─►    validate args (pydantic)
-                               resolve_path(db_path)
-                               engine.fetch_one(url)    ─►    Router.resolve(url)
-                                                              Worker.run(task)
+call browse_search(q)    ─►    validate args (pydantic)
+                               engine.search_web(q)     ─►    SearchWorker.run()
+                                                              (SearXNG / DDG / Brave)
+                          ◄── [≤10 hits: title, url, snippet]
+
+call browse_locate(url)  ─►    engine.probe(url)        ─►    Router.resolve(url)
+                          ◄── { mode, cached, domain_stats }
+
+call browse_inspect(url) ─►    engine.inspect(url)      ─►    HttpWorker.peek()
+                          ◄── { title, status, head: ≤500 chars }
+
+call browse_fetch(url)   ─►    engine.fetch_one(url)    ─►    Router → Worker.run()
                                                               Indexer.index(result)
                                                               Stream.append(result)
-                               build receipt (≤150 tok)
                           ◄── { ok, url, mode, rows, ms }
 
-call browse_search(q)    ─►    engine.search(q, limit) ─►    QueryEngine.search()
-                          ◄── [≤10 rows, surgical]
+call crawl_run(domain)   ─►    engine.crawl(domain)     ─►    CrawlWorker (BFS)
+                                                              checkpoint per N tasks
+                          ◄── { ok, run_id, pages, errors }
+
+call query_search(q)     ─►    engine.fts_search(q)     ─►    QueryEngine.search()
+                          ◄── [≤10 rows from fts_pages, surgical]
 ```
+
+The model can stop at any step — it does not have to run the whole
+chain. Each tool returns a structured receipt, never raw HTML.
 
 Key rules:
 
@@ -172,15 +213,20 @@ Key rules:
 
 Every tier follows the **LOCATE → INSPECT → PATCH → VERIFY** pattern.
 
-### 7.1 Tier — `mcp_web_browser_basic` (single URL ops, default-on)
+### 7.1 Tier — `mcp_web_browser_basic` (search + single URL ops, default-on)
 
 | # | Tool              | Pattern role | Purpose                                                  |
 |---|-------------------|--------------|----------------------------------------------------------|
-| 1 | `browse_locate`   | LOCATE       | Probe URL, return detected mode + cached domain stats    |
-| 2 | `browse_inspect`  | INSPECT      | Fetch URL once, return title + first N chars + status    |
-| 3 | `browse_fetch`    | PATCH        | Execute fetch, route to indexer, return receipt          |
-| 4 | `browse_verify`   | VERIFY       | Read one row from `pages` by URL, return summary         |
-| 5 | `browse_status`   | (aux)        | Return engine health: pools idle, breaker open count     |
+| 1 | `browse_search`   | LOCATE       | Web search (SearXNG/DDG/Brave) → ≤10 result hits         |
+| 2 | `browse_locate`   | LOCATE       | Probe URL, return detected mode + cached domain stats    |
+| 3 | `browse_inspect`  | INSPECT      | Fetch URL once, return title + first N chars + status    |
+| 4 | `browse_fetch`    | PATCH        | Execute fetch (HTTP/API/DOM/SPA via router), index it    |
+| 5 | `browse_verify`   | VERIFY       | Read one row from `pages` by URL, return summary         |
+| 6 | `browse_status`   | (aux)        | Return engine health: pools idle, breaker open count     |
+
+`browse_search` is the open-web entry point. `query_search` (query
+tier) is its local-DB counterpart — the model picks one based on
+whether the data has been ingested already.
 
 ### 7.2 Tier — `mcp_web_browser_query` (read-only data access)
 
@@ -202,9 +248,10 @@ Every tier follows the **LOCATE → INSPECT → PATCH → VERIFY** pattern.
 | 4 | `crawl_resume`       | PATCH        | Resume from checkpoint by `run_id`                     |
 | 5 | `crawl_verify`       | VERIFY       | Return run summary: pages, errors, dead-letter count   |
 
-Total simultaneously loadable: **15** tools across 3 tiers — but only
-one tier is loaded by default. Compliant with `≤ 12 simultaneously
-loaded` when at most two tiers are enabled together.
+Total simultaneously loadable: **16** tools across 3 tiers (basic = 6,
+query = 5, crawl = 5). Each tier is still ≤ 8. The 12-tool ceiling is
+respected as long as at most two tiers are enabled together; basic +
+query (the default pair) is exactly 11.
 
 ## 8. Engine / Server Separation
 
@@ -297,9 +344,6 @@ and re-sync. No separate install script.
 - Never hardcode token / row limits — always go through
   `shared.platform_utils`.
 - Never reach back into `server.py` from inside `engine/**`.
-- Never write a long file in a single shot. Use the chunked write
-  protocol from CLAUDE.md §3.5 (seed + append) for any artefact over
-  ~150 lines.
 
 ## 14. Milestones
 
@@ -308,10 +352,11 @@ and re-sync. No separate install script.
 | M1  | Repo scaffold, `pyproject.toml`, lint + mypy + pytest     | `uv sync && pytest -q` passes on empty tests      |
 | M2  | `engine/db/` schema + indexer + query                    | Can write & query 1k pages locally                |
 | M3  | `engine/workers/http_worker.py` + resilience             | Yahoo Finance JSON endpoint passes integration    |
+| M3b | `engine/workers/search_worker.py` (SearXNG / DDG / Brave) | `browse_search("hello")` returns ≥ 1 hit offline-OK |
 | M4  | `engine/workers/browser_worker.py` (Playwright stealth)  | Headless extract on SPA fixture                   |
 | M5  | `engine/workers/crawl_worker.py` + checkpoint            | Domain sweep on local fixture, resumes after kill |
-| M6  | `server.py` + Basic tier (5 tools)                       | LM Studio loads tools, all four roles green       |
-| M7  | Query tier + Crawl tier                                  | All 15 tools schema-validate < 700 tokens         |
+| M6  | `server.py` + Basic tier (6 tools incl. `browse_search`) | LM Studio loads tools, all four roles green       |
+| M7  | Query tier + Crawl tier                                  | All 16 tools schema-validate < 700 tokens / tier  |
 | M8  | `mcp.json` self-update + README + CI                     | `git clone` + first launch works on a clean box   |
 
 ## 15. Out of Scope
@@ -322,6 +367,8 @@ and re-sync. No separate install script.
   fully independent (one SQLite per instance), as in krawl.
 - Any LLM call inside the engine. Intelligence stays on the model side.
 - Cookies / login flows beyond per-task header injection.
+- Paid search APIs (Google CSE, Bing API, Serper, etc.). All search
+  backends must be keyless and self-hostable per `Constraint 2`.
 
 ## 16. References
 
