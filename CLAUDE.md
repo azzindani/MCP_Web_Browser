@@ -224,3 +224,53 @@ built-ins.
 6. Commit on `claude/port-krawl-mcp-fY8xW` with a message in the form
    `<area>: <imperative summary>`.
 7. Update the progress tracker in §7 below.
+
+## 7. Progress Tracker
+
+### 7.1 Milestones
+
+- [ ] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/mypy/pytest)
+- [ ] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
+- [ ] **M3** — `engine/workers/http_worker.py` + resilience layer
+- [ ] **M4** — `engine/workers/browser_worker.py` (Playwright stealth)
+- [ ] **M5** — `engine/workers/crawl_worker.py` + checkpoint resume
+- [ ] **M6** — `server.py` + Basic tier (5 tools)
+- [ ] **M7** — Query tier + Crawl tier (10 more tools)
+- [ ] **M8** — `mcp.json` self-update flow + README + CI
+
+### 7.2 Tool surface
+
+| Tier    | Tool             | Role     | Status |
+|---------|------------------|----------|--------|
+| basic   | `browse_locate`  | LOCATE   | [ ]    |
+| basic   | `browse_inspect` | INSPECT  | [ ]    |
+| basic   | `browse_fetch`   | PATCH    | [ ]    |
+| basic   | `browse_verify`  | VERIFY   | [ ]    |
+| basic   | `browse_status`  | aux      | [ ]    |
+| query   | `query_locate`   | LOCATE   | [ ]    |
+| query   | `query_search`   | INSPECT  | [ ]    |
+| query   | `query_select`   | INSPECT  | [ ]    |
+| query   | `query_export`   | PATCH    | [ ]    |
+| query   | `query_stats`    | VERIFY   | [ ]    |
+| crawl   | `crawl_locate`   | LOCATE   | [ ]    |
+| crawl   | `crawl_plan`     | INSPECT  | [ ]    |
+| crawl   | `crawl_run`      | PATCH    | [ ]    |
+| crawl   | `crawl_resume`   | PATCH    | [ ]    |
+| crawl   | `crawl_verify`   | VERIFY   | [ ]    |
+
+### 7.3 Compliance gates (CI)
+
+- [ ] No `mcp` imports inside `engine/**` or `shared/**`
+- [ ] All tool docstrings ≤ 80 characters
+- [ ] Combined schema budget ≤ 700 tokens per tier
+- [ ] `MCP_CONSTRAINED_MODE` honoured at call time (test via monkeypatch)
+- [ ] `snapshot()` invoked before every persistent write (audit script)
+- [ ] No stdout writes from any module reachable by `server.py`
+
+## 8. References
+
+- Migration plan: `PORT_PLAN.md`
+- Source engine: <https://github.com/azzindani/krawl>
+- Krawl architecture: `docs/ARCHITECTURE.md` in the krawl repo
+- Governing standard:
+  <https://github.com/azzindani/Standards/blob/main/local_mcp/STANDARDS.md>
