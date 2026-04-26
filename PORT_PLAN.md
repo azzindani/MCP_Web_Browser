@@ -138,3 +138,70 @@ mcp_web_browser/
     ├── integration/
     └── e2e/
 ```
+
+## 6. Just-In-Time Execution Model
+
+```
+LLM turn                       MCP server                      Engine
+────────                       ──────────                      ──────
+call browse_fetch(url)   ─►    validate args (pydantic)
+                               resolve_path(db_path)
+                               engine.fetch_one(url)    ─►    Router.resolve(url)
+                                                              Worker.run(task)
+                                                              Indexer.index(result)
+                                                              Stream.append(result)
+                               build receipt (≤150 tok)
+                          ◄── { ok, url, mode, rows, ms }
+
+call browse_search(q)    ─►    engine.search(q, limit) ─►    QueryEngine.search()
+                          ◄── [≤10 rows, surgical]
+```
+
+Key rules:
+
+- **No background loops in MCP tools.** Each call returns within the
+  per-domain timeout budget. Long crawls are explicitly initiated via
+  `crawl_run` and tracked through `crawl_resume`, never kept alive
+  across calls.
+- **Snapshot before every persistent write** (SQLite WAL + atomic rename
+  for JSONL/checkpoint files).
+- **Surgical reads only.** Tool responses include `truncated: bool` and
+  `total: int` whenever the underlying result set exceeds the cap.
+
+## 7. MCP Tool Design (Three-Tier Split, ≤ 8 Tools per Tier)
+
+Every tier follows the **LOCATE → INSPECT → PATCH → VERIFY** pattern.
+
+### 7.1 Tier — `mcp_web_browser_basic` (single URL ops, default-on)
+
+| # | Tool              | Pattern role | Purpose                                                  |
+|---|-------------------|--------------|----------------------------------------------------------|
+| 1 | `browse_locate`   | LOCATE       | Probe URL, return detected mode + cached domain stats    |
+| 2 | `browse_inspect`  | INSPECT      | Fetch URL once, return title + first N chars + status    |
+| 3 | `browse_fetch`    | PATCH        | Execute fetch, route to indexer, return receipt          |
+| 4 | `browse_verify`   | VERIFY       | Read one row from `pages` by URL, return summary         |
+| 5 | `browse_status`   | (aux)        | Return engine health: pools idle, breaker open count     |
+
+### 7.2 Tier — `mcp_web_browser_query` (read-only data access)
+
+| # | Tool                 | Pattern role | Purpose                                              |
+|---|----------------------|--------------|------------------------------------------------------|
+| 1 | `query_locate`       | LOCATE       | List tables + row counts                             |
+| 2 | `query_search`       | INSPECT      | Bounded FTS5 query, ≤10 rows                         |
+| 3 | `query_select`       | INSPECT      | Whitelisted SELECT (param binding only, no DDL)      |
+| 4 | `query_export`       | PATCH        | Write CSV/JSON file, return path only                |
+| 5 | `query_stats`        | VERIFY       | Per-table counts + last-updated timestamps           |
+
+### 7.3 Tier — `mcp_web_browser_crawl` (multi-URL traversal)
+
+| # | Tool                 | Pattern role | Purpose                                                |
+|---|----------------------|--------------|--------------------------------------------------------|
+| 1 | `crawl_locate`       | LOCATE       | Probe domain root, return mode + estimated frontier    |
+| 2 | `crawl_plan`         | INSPECT      | Dry-run: enumerate first N links at depth ≤ 1          |
+| 3 | `crawl_run`          | PATCH        | Execute bounded crawl (`max_pages`, `max_depth`)       |
+| 4 | `crawl_resume`       | PATCH        | Resume from checkpoint by `run_id`                     |
+| 5 | `crawl_verify`       | VERIFY       | Return run summary: pages, errors, dead-letter count   |
+
+Total simultaneously loadable: **15** tools across 3 tiers — but only
+one tier is loaded by default. Compliant with `≤ 12 simultaneously
+loaded` when at most two tiers are enabled together.
