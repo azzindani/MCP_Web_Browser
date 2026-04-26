@@ -179,3 +179,48 @@ built-ins.
 - Every subprocess call: `subprocess.run([...], shell=False)`.
 - Playwright launches with sandbox **on** unless explicitly disabled
   by container detection.
+
+## 5. What the AI Must NEVER Do
+
+- Never `print()` to stdout anywhere a server import path can reach —
+  it corrupts the MCP stdio framing. Use the engine's `display.py`
+  helpers, which write to stderr.
+- Never return a plain string from an MCP tool. Always a structured
+  dict / Pydantic model.
+- Never write to disk without calling `snapshot()` first.
+- Never use `eval`, `exec`, `shell=True`, or string-formatted SQL.
+- Never add a 9th tool to a tier or load all three tiers at once.
+- Never import anything from `mcp.*` inside `engine/**` or `shared/**`.
+- Never call a cloud API, require an API key, or add a network
+  dependency that is not the target site itself.
+- Never embed an LLM call inside the engine. The model is the caller,
+  never the callee.
+- Never hardcode row / depth / page caps. Go through
+  `shared.platform_utils`.
+- Never run a long-lived background task from inside a tool handler.
+  `crawl_run` is the only exception, and it must checkpoint.
+- Never write a long file in a single tool call — it will time out.
+  Always use the chunked write protocol from §3.5 (Write a small
+  header, then Edit/append one section at a time).
+- Never rebase, force-push, or amend on shared branches.
+- Never push to `main`. Development happens on
+  `claude/port-krawl-mcp-fY8xW`.
+
+## 6. Standard Workflow for a Change
+
+1. Read `PORT_PLAN.md` § matching the milestone you are working on.
+2. Plan the change: which tier, which role (LOCATE/INSPECT/PATCH/VERIFY),
+   which engine module.
+3. Implement engine logic first under `engine/**`. Add unit tests that
+   import nothing from `mcp.*`.
+4. Wire the tool one-liner in `server.py`. Add a smoke test that
+   round-trips a Pydantic-validated call.
+5. Run:
+   ```
+   uv run ruff check .
+   uv run mypy engine shared server.py
+   uv run pytest -q
+   ```
+6. Commit on `claude/port-krawl-mcp-fY8xW` with a message in the form
+   `<area>: <imperative summary>`.
+7. Update the progress tracker in §7 below.
