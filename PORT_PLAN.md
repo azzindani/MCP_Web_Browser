@@ -205,3 +205,98 @@ Every tier follows the **LOCATE → INSPECT → PATCH → VERIFY** pattern.
 Total simultaneously loadable: **15** tools across 3 tiers — but only
 one tier is loaded by default. Compliant with `≤ 12 simultaneously
 loaded` when at most two tiers are enabled together.
+
+## 8. Engine / Server Separation
+
+```
+engine/**           server.py
+─────────           ─────────
+no MCP imports      from mcp.server import Server
+pure Python         from engine import fetch_one, search, ...
+sync or async       @app.tool() one-liners
+unit-testable       def browse_fetch(url: str) -> dict:
+without MCP             return fetch_one(url)
+```
+
+Lint check (CI):
+
+```
+grep -rE "^(from|import)\s+mcp" engine/ && exit 1 || exit 0
+```
+
+## 9. Token Budget Discipline
+
+Reads `MCP_CONSTRAINED_MODE` **at call time**, not import time.
+
+| Limit                     | Constrained (≤8 GB VRAM) | Default |
+|---------------------------|--------------------------|---------|
+| Rows per `query_*` call   | 20                       | 100     |
+| Search hits per call      | 10                       | 50      |
+| `crawl_run` max pages     | 25                       | 250     |
+| `crawl_run` max depth     | 3                        | 5       |
+| Inspect body chars        | 500                      | 2 000   |
+
+Tool docstring length: ≤ 80 chars. Enforced by:
+
+```python
+assert all(len((t.__doc__ or "")) <= 80 for t in TOOLS)
+```
+
+## 10. Snapshot & State Protocol
+
+```
+SQLite              WAL mode, busy_timeout=5000, checkpoint per run end
+JSONL stream        append-only, fsync on rotation, atomic rename on close
+Checkpoint file     write to .tmp → fsync → rename → fsync(dir)
+Router cache        same atomic-rename pattern
+```
+
+Every tool that mutates state calls `shared.version_control.snapshot()`
+before writing. Failure to snapshot is a hard error; the tool returns
+`{ ok: false, error: "snapshot_failed" }` instead of attempting the write.
+
+## 11. Path & Process Safety
+
+- All user-supplied paths pass through `shared.path_safety.resolve_path()`.
+- `subprocess.run(..., shell=False)`, argument list only. No `eval`,
+  no `exec`, no template-string SQL.
+- Playwright launches Chromium with `--no-sandbox` only when running as
+  non-root in a container; otherwise sandbox stays on.
+
+## 12. Distribution — Self-Updating `mcp.json`
+
+```jsonc
+{
+  "mcpServers": {
+    "mcp_web_browser": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory", "${HOME}/.mcp/mcp_web_browser",
+        "python", "-m", "mcp_web_browser.server"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "auto" }
+    }
+  }
+}
+```
+
+First launch clones the repo into `~/.mcp/mcp_web_browser`, runs
+`uv sync`, then starts the server. Subsequent launches `git pull --ff-only`
+and re-sync. No separate install script.
+
+## 13. Absolute Prohibitions (carried verbatim from STANDARDS §38)
+
+- Never print to stdout from inside the server (corrupts MCP stdio).
+- Never return plain strings from tools — always structured dicts.
+- Never write to disk without `snapshot()` first.
+- Never use `eval`/`exec`/`shell=True` on any input.
+- Never exceed 8 tools in a single tier or 12 simultaneously loaded.
+- Never call cloud APIs or require API keys.
+- Never embed an LLM call inside the engine.
+- Never hardcode token / row limits — always go through
+  `shared.platform_utils`.
+- Never reach back into `server.py` from inside `engine/**`.
+- Never write a long file in a single shot. Use the chunked write
+  protocol from CLAUDE.md §3.5 (seed + append) for any artefact over
+  ~150 lines.
