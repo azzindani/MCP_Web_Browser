@@ -65,3 +65,76 @@ config/domains.ts                     →   engine/config/domains.py
 selectors/                            →   engine/selectors/
 tasks/*.json                          →   tasks/*.json   (unchanged format)
 ```
+
+## 4. Dependency Mapping
+
+| TypeScript (krawl)         | Python (mcp_web_browser)         | Notes                                 |
+|----------------------------|----------------------------------|---------------------------------------|
+| `playwright`               | `playwright` (sync API)          | Same browser, same stealth surface    |
+| `better-sqlite3`           | `sqlite3` (stdlib) + WAL pragma  | No third-party DB driver              |
+| `undici` / `fetch`         | `httpx[http2]`                   | TLS impersonation via `curl_cffi`     |
+| `zod`                      | `pydantic` v2                    | Tool schemas + task validation        |
+| `p-limit`                  | `asyncio.Semaphore`              | Per-pool concurrency                  |
+| `pdf-parse`                | `pypdf`                          | Extract text only, never embed bytes  |
+| MCP wrapper (n/a)          | `mcp` (Python SDK, stdio)        | Server layer, kept thin               |
+
+Total runtime deps: **6** (cap = 7 per `dependency policy`).
+No deps with native build steps beyond Playwright's bundled Chromium.
+
+## 5. Repository Layout
+
+```
+mcp_web_browser/
+│
+├── server.py                  ← MCP entrypoint. Tool funcs are one-liners.
+├── mcp.json                   ← self-updating launch entry (clone+uv sync)
+├── pyproject.toml
+├── uv.lock
+├── README.md
+├── CLAUDE.md
+├── PORT_PLAN.md               ← this file
+│
+├── engine/                    ← zero MCP imports anywhere under here
+│   ├── __init__.py
+│   ├── cli.py                 ← optional standalone CLI (no MCP)
+│   ├── core/
+│   │   ├── queue.py
+│   │   ├── router.py
+│   │   ├── scheduler.py
+│   │   ├── checkpoint.py
+│   │   └── timer.py
+│   ├── workers/
+│   │   ├── http_worker.py
+│   │   ├── browser_worker.py
+│   │   ├── crawl_worker.py
+│   │   ├── fingerprint.py
+│   │   └── tls.py
+│   ├── resilience/
+│   │   ├── circuit_breaker.py
+│   │   ├── rate_limiter.py
+│   │   └── retry.py
+│   ├── db/
+│   │   ├── schema.py
+│   │   ├── indexer.py
+│   │   └── query.py
+│   ├── output/
+│   │   ├── stream.py
+│   │   ├── export.py
+│   │   └── display.py
+│   ├── config/
+│   │   ├── defaults.py
+│   │   └── domains.py
+│   └── selectors/
+│
+├── shared/
+│   ├── __init__.py
+│   ├── platform_utils.py      ← is_constrained_mode(), get_max_rows()
+│   ├── path_safety.py         ← resolve_path()
+│   └── version_control.py     ← snapshot() / atomic write
+│
+└── tests/
+    ├── unit/
+    ├── smoke/
+    ├── integration/
+    └── e2e/
+```
