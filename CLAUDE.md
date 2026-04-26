@@ -13,10 +13,14 @@ disagree, the standard wins.
 ## 1. Project Overview
 
 `mcp_web_browser` is a **self-hosted MCP server** that gives a local LLM
-the ability to fetch web pages, run a stealth browser, crawl domains,
-and query the resulting SQLite knowledge base.
+end-to-end web access in one place: web search, URL probe, HTTP/API
+fetch, DOM/SPA rendering, domain crawl, and full-text query — all
+backed by a local SQLite knowledge base.
 
 ```
+Pipeline: web search → URL probe → HTTP/API fetch → DOM/SPA render
+          → domain crawl → SQLite + FTS5 → query / export
+
 Goal:   port the krawl engine (TypeScript) into Python and expose it
         as an MCP server for just-in-time tool calls from a local model.
 
@@ -42,7 +46,7 @@ mcp_web_browser/
 │
 ├── engine/                    ← pure Python. ZERO MCP imports.
 │   ├── core/        queue, router, scheduler, checkpoint, timer
-│   ├── workers/     http, browser, crawl, fingerprint, tls
+│   ├── workers/     http, browser, crawl, search, fingerprint, tls
 │   ├── resilience/  circuit_breaker, rate_limiter, retry
 │   ├── db/          schema, indexer, query  (SQLite + FTS5, WAL mode)
 │   ├── output/      stream (JSONL), export (CSV/JSON), display
@@ -153,7 +157,7 @@ in the public surface. Compose two existing tools instead.
 
 | Tier (env-toggled)              | Tools | Default |
 |---------------------------------|-------|---------|
-| `mcp_web_browser_basic`         | 5     | on      |
+| `mcp_web_browser_basic`         | 6     | on      |
 | `mcp_web_browser_query`         | 5     | on      |
 | `mcp_web_browser_crawl`         | 5     | off     |
 
@@ -232,9 +236,10 @@ built-ins.
 - [ ] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/mypy/pytest)
 - [ ] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
 - [ ] **M3** — `engine/workers/http_worker.py` + resilience layer
+- [ ] **M3b** — `engine/workers/search_worker.py` (SearXNG / DDG / Brave)
 - [ ] **M4** — `engine/workers/browser_worker.py` (Playwright stealth)
 - [ ] **M5** — `engine/workers/crawl_worker.py` + checkpoint resume
-- [ ] **M6** — `server.py` + Basic tier (5 tools)
+- [ ] **M6** — `server.py` + Basic tier (6 tools incl. `browse_search`)
 - [ ] **M7** — Query tier + Crawl tier (10 more tools)
 - [ ] **M8** — `mcp.json` self-update flow + README + CI
 
@@ -242,6 +247,7 @@ built-ins.
 
 | Tier    | Tool             | Role     | Status |
 |---------|------------------|----------|--------|
+| basic   | `browse_search`  | LOCATE   | [ ]    |
 | basic   | `browse_locate`  | LOCATE   | [ ]    |
 | basic   | `browse_inspect` | INSPECT  | [ ]    |
 | basic   | `browse_fetch`   | PATCH    | [ ]    |
