@@ -132,3 +132,50 @@ def search(q: str, limit: int | None = None) -> list[dict]:
 
 `MCP_CONSTRAINED_MODE` is read **at call time**, not at import time, so
 tests and CI can flip it without reloading modules.
+
+## 4. Domain-Specific Tool Design Rules
+
+### 4.1 LOCATE → INSPECT → PATCH → VERIFY
+
+Every tier exposes the same four-role pattern:
+
+| Role     | What it does                                | Mutates? |
+|----------|---------------------------------------------|----------|
+| LOCATE   | Probe / list / discover candidates           | no       |
+| INSPECT  | Read a single item or a bounded slice         | no       |
+| PATCH    | Execute one fetch / write / export            | yes      |
+| VERIFY   | Read back the row / receipt of a prior PATCH  | no       |
+
+If a proposed tool does not fit one of these roles, it does not belong
+in the public surface. Compose two existing tools instead.
+
+### 4.2 Tier discipline (≤ 8 tools per tier, ≤ 12 simultaneously loaded)
+
+| Tier (env-toggled)              | Tools | Default |
+|---------------------------------|-------|---------|
+| `mcp_web_browser_basic`         | 5     | on      |
+| `mcp_web_browser_query`         | 5     | on      |
+| `mcp_web_browser_crawl`         | 5     | off     |
+
+Never enable all three tiers at once on a constrained machine — that
+breaks the 12-tool ceiling once the host (LM Studio etc.) adds its own
+built-ins.
+
+### 4.3 Tool schema discipline
+
+- Tool docstrings ≤ **80 characters**. CI enforces:
+  ```python
+  assert all(len((t.__doc__ or "")) <= 80 for t in TOOLS)
+  ```
+- Tool parameters use Pydantic v2 models, not raw dict schemas.
+- Default arguments resolved through `shared.platform_utils`, never
+  baked into the schema.
+- Error responses return `{ ok: False, error: "<slug>", hint: "..." }`
+  — never raise across the MCP boundary.
+
+### 4.4 Path & process safety
+
+- Every user-supplied path: `shared.path_safety.resolve_path(p)`.
+- Every subprocess call: `subprocess.run([...], shell=False)`.
+- Playwright launches with sandbox **on** unless explicitly disabled
+  by container detection.
