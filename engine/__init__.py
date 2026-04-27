@@ -96,3 +96,134 @@ def reset_runtime() -> None:
     """Test-only: drop the singleton so the next `runtime()` rebuilds."""
     global _RT
     _RT = None
+
+
+# ── Public entry points ────────────────────────────────────────────────
+
+
+async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
+    rt = runtime()
+    result = await rt.search_worker().search(query, limit=limit)
+    return {
+        "ok": result.backend != "none",
+        "query": result.query,
+        "backend": result.backend,
+        "hits": [
+            {
+                "title": h.title,
+                "url": h.url,
+                "snippet": h.snippet[:200],
+                "backend": h.backend,
+            }
+            for h in result.hits
+        ],
+        "total": result.total,
+        "truncated": result.truncated,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
+
+async def fetch_one(url: str, run_id: str = "mcp") -> dict[str, Any]:
+    rt = runtime()
+    result = await rt.http_worker().fetch_one(Task(url=url))
+    indexed: list[str] = []
+    if result.status == "ok":
+        report = rt.indexer().index(
+            {
+                "url": result.url,
+                "title": result.title,
+                "status": result.status,
+                "mode": result.mode,
+                "elapsed_ms": result.elapsed_ms,
+                "extracted": result.extracted,
+                "group": result.group,
+                "ticker": result.ticker,
+                "extractedAt": result.extracted_at,
+            },
+            run_id=run_id,
+        )
+        indexed = report.indexed
+    return {
+        "ok": result.status == "ok",
+        "url": result.url,
+        "mode": result.mode,
+        "status": result.status,
+        "elapsed_ms": result.elapsed_ms,
+        "indexed": indexed,
+        "error": result.error,
+    }
+
+
+async def inspect_one(url: str) -> dict[str, Any]:
+    rt = runtime()
+    result = await rt.http_worker().fetch_one(Task(url=url))
+    cap = get_inspect_chars()
+    head = ""
+    if result.status == "ok" and isinstance(result.extracted, dict):
+        head = str(result.extracted.get("text_preview") or "")
+        if not head:
+            head = str(result.extracted)
+    return {
+        "ok": result.status == "ok",
+        "url": result.url,
+        "title": result.title,
+        "status": result.status,
+        "head": head[:cap],
+        "elapsed_ms": result.elapsed_ms,
+        "error": result.error,
+    }
+
+
+async def probe_one(url: str) -> dict[str, Any]:
+    """LOCATE: detect mode without persisting. HEAD probe + content-type sniff."""
+    rt = runtime()
+    domain = urlparse(url).hostname or url
+    if not rt._breaker.allow(domain):
+        return {"ok": False, "url": url, "domain": domain, "mode": "blocked",
+                "error": "circuit open"}
+    try:
+        response = await rt.http_client().head(
+            url, follow_redirects=True, timeout=5.0
+        )
+    except httpx.HTTPError as exc:
+        return {"ok": False, "url": url, "domain": domain, "mode": "error",
+                "error": str(exc)[:80]}
+    ct = response.headers.get("content-type", "").lower()
+    if "json" in ct:
+        mode = "http_json"
+    elif "html" in ct:
+        mode = "http_curl"
+    else:
+        mode = "http_curl"
+    return {
+        "ok": True,
+        "url": url,
+        "domain": domain,
+        "mode": mode,
+        "status_code": response.status_code,
+        "content_type": ct,
+    }
+
+
+def verify_one(url: str) -> dict[str, Any]:
+    rt = runtime()
+    rows = rt.query().select(
+        "SELECT * FROM pages WHERE url = ? LIMIT 1", (url,), limit=1
+    )
+    if not rows:
+        return {"ok": False, "url": url, "error": "not_indexed"}
+    row = rows[0]
+    return {
+        "ok": True,
+        "url": row["url"],
+        "title": row["title"],
+        "domain": row["domain"],
+        "status": row["status"],
+        "mode": row["mode"],
+        "first_seen": row["first_seen"],
+        "last_seen": row["last_seen"],
+    }
+
+
+def engine_status() -> dict[str, Any]:
+    return runtime().status()
