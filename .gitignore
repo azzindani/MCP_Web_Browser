@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.python-version
+
+# uv / build
+dist/
+build/
+.cache/
+.uv/
+
+# Type-check / lint caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Project artefacts (engine output)
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+krawl_checkpoint_*.json
+router_cache.json
+krawl_exports/
+
+# Playwright bundled browsers (installed via uv run playwright install)
+.playwright/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

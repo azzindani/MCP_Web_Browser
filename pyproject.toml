@@ -1,0 +1,58 @@
+[project]
+name            = "mcp_web_browser"
+version         = "0.1.0"
+description     = "Self-hosted MCP server for end-to-end web access on local hardware"
+readme          = "README.md"
+requires-python = ">=3.11"
+license         = { text = "MIT" }
+authors         = [{ name = "Afza Azzindani" }]
+
+# Runtime deps. Cap = 7 per STANDARDS §35. Currently 5.
+dependencies = [
+  "mcp>=1.0",
+  "httpx[http2]>=0.27",
+  "playwright>=1.45",
+  "pydantic>=2.7",
+  "pypdf>=4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8",
+  "pytest-asyncio>=0.23",
+  "ruff>=0.5",
+  "mypy>=1.10",
+]
+
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["engine", "shared"]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ASYNC", "S", "RUF"]
+ignore = ["E501", "S101"]  # E501: covered by formatter; S101: pytest uses assert
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+
+[tool.mypy]
+python_version         = "3.11"
+strict                 = true
+ignore_missing_imports = true
+files                  = ["engine", "shared", "server.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "-q"
+markers   = [
+  "integration: hits real network",
+  "e2e: full pipeline tests",
+]
