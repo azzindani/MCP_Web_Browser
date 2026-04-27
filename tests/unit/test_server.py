@@ -15,13 +15,17 @@ import server
 from engine.db.indexer import Indexer
 from engine.db.schema import init_schema
 
-EXPECTED_TOOLS = {
-    "browse_search",
-    "browse_locate",
-    "browse_inspect",
-    "browse_fetch",
-    "browse_verify",
-    "browse_status",
+BASIC_TOOLS = {
+    "browse_search", "browse_locate", "browse_inspect",
+    "browse_fetch", "browse_verify", "browse_status",
+}
+QUERY_TOOLS = {
+    "query_locate", "query_search", "query_select",
+    "query_export", "query_stats",
+}
+CRAWL_TOOLS = {
+    "crawl_locate", "crawl_plan", "crawl_run",
+    "crawl_resume", "crawl_verify",
 }
 
 DOCSTRING_CAP = 80
@@ -34,9 +38,18 @@ def _registered_tools() -> dict[str, object]:
     return {t.name: t for t in tools}
 
 
-def test_basic_tier_registers_six_tools() -> None:
+def test_default_tiers_register_basic_plus_query() -> None:
     names = set(_registered_tools().keys())
-    assert names == EXPECTED_TOOLS
+    # Crawl tier defaults to off; Basic + Query are on.
+    assert BASIC_TOOLS.issubset(names)
+    assert QUERY_TOOLS.issubset(names)
+    assert names.isdisjoint(CRAWL_TOOLS)
+
+
+def test_default_tier_count_under_twelve_ceiling() -> None:
+    """Basic (6) + Query (5) = 11. Within the 12-tool simultaneous cap."""
+    names = set(_registered_tools().keys())
+    assert len(names & (BASIC_TOOLS | QUERY_TOOLS)) <= 12
 
 
 def test_every_tool_docstring_is_within_cap() -> None:
