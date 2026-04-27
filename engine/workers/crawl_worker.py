@@ -125,3 +125,195 @@ class CrawlRunReport:
     @property
     def files_discovered(self) -> int:
         return sum(len(p.files) for p in self.pages)
+
+
+class CrawlWorker:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+    ) -> None:
+        self._client = client
+        self._breaker = breaker
+        self._limiter = limiter
+
+    @classmethod
+    def make_client(cls, timeout: float = DEFAULTS.CRAWL_TIMEOUT) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            http2=True,
+            follow_redirects=True,
+            timeout=timeout,
+            headers={
+                "User-Agent": DEFAULTS.USER_AGENT,
+                "Accept": "text/html,*/*",
+                "Accept-Language": DEFAULTS.LOCALE + ",en;q=0.7",
+            },
+        )
+
+    async def run(
+        self, task: CrawlTask, *, checkpoint: Checkpoint | None = None
+    ) -> CrawlRunReport:
+        started = _now_iso()
+        run_id = checkpoint.run_id() if checkpoint else f"crawl-{int(time.time())}"
+        seed_domain = _domain_of(task.url)
+        base = _base_path(task.url)
+
+        visited: set[str] = set(checkpoint.done_urls()) if checkpoint else set()
+        visited.add(task.url)
+        # (url, depth)
+        queue: list[tuple[str, int]] = [(task.url, 0)]
+        results: list[CrawlPageResult] = []
+        errors = 0
+
+        while queue and len(results) < task.max_pages:
+            url, depth = queue.pop(0)
+            if checkpoint and url in checkpoint.done_urls() and url != task.url:
+                continue
+
+            domain = _domain_of(url)
+            if not self._breaker.allow(domain):
+                continue
+            await self._limiter.acquire(domain)
+
+            page = await self._fetch_page(task, url, depth, seed_domain)
+            results.append(page)
+            if page.status == "error":
+                errors += 1
+
+            visited.add(url)
+            if checkpoint is not None:
+                checkpoint.save(visited, total_count=len(queue) + len(results))
+
+            if page.status == "ok" and depth < task.crawl_depth:
+                for link in page.links:
+                    if link in visited:
+                        continue
+                    try:
+                        if not urlparse(link).path.startswith(base):
+                            continue
+                    except ValueError:
+                        continue
+                    visited.add(link)
+                    queue.append((link, depth + 1))
+
+        return CrawlRunReport(
+            run_id=run_id,
+            seed_url=task.url,
+            pages=results,
+            visited=len(visited),
+            errors=errors,
+            started_at=started,
+            finished_at=_now_iso(),
+        )
+
+    async def _fetch_page(
+        self,
+        task: CrawlTask,
+        url: str,
+        depth: int,
+        seed_domain: str,
+    ) -> CrawlPageResult:
+        domain = _domain_of(url)
+        timeout = DOMAIN_CONFIG.get(domain, {}).get("timeout", DEFAULTS.CRAWL_TIMEOUT)
+        t0 = time.monotonic()
+        now = _now_iso()
+        try:
+            response = await self._client.get(url, timeout=timeout)
+        except httpx.HTTPError as exc:
+            self._breaker.failure(domain)
+            return CrawlPageResult(
+                task=task, status="error", url=url,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                error=str(exc)[:100], group=task.group, extracted_at=now,
+            )
+
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return CrawlPageResult(
+                task=task, status="error", url=url,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                error=f"HTTP {response.status_code}",
+                group=task.group, extracted_at=now,
+            )
+
+        content_type = response.headers.get("content-type", "")
+        if "html" not in content_type.lower():
+            return self._handle_non_html(task, url, response, t0, now)
+
+        html = response.text
+        title_match = _TITLE_RE.search(html)
+        title = title_match.group(1).strip() if title_match else ""
+
+        try:
+            base_url = response.url
+        except AttributeError:
+            base_url = url
+
+        links: list[str] = []
+        files: list[dict[str, str]] = []
+        seen_files: dict[str, dict[str, str]] = {}
+
+        for match in _LINK_RE.finditer(html):
+            href = match.group(1).strip()
+            try:
+                full = urljoin(str(base_url), href)
+            except ValueError:
+                continue
+            ext = _ext_of(full)
+            if ext in DEFAULTS.COLLECTIBLE_EXTENSIONS:
+                if full not in seen_files:
+                    seen_files[full] = {"url": full, "text": href, "ext": ext}
+                continue
+            if ext in _STATIC_EXTENSIONS:
+                continue
+            if not full.startswith("http"):
+                continue
+            if _domain_of(full) != seed_domain:
+                continue
+            links.append(full)
+
+        unique_links = list(dict.fromkeys(links))[:50]
+        files = list(seen_files.values())
+        self._breaker.success(domain)
+
+        return CrawlPageResult(
+            task=task, status="ok", url=url, title=title,
+            links=unique_links, files=files,
+            extracted={"files": files, "links": unique_links, "depth": depth},
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+            group=task.group, extracted_at=now,
+        )
+
+    def _handle_non_html(
+        self,
+        task: CrawlTask,
+        url: str,
+        response: httpx.Response,
+        t0: float,
+        now: str,
+    ) -> CrawlPageResult:
+        domain = _domain_of(url)
+        try:
+            filename = os.path.basename(urlparse(url).path) or url
+        except ValueError:
+            filename = url
+        ext = _ext_of(url)
+        if ext not in DEFAULTS.COLLECTIBLE_EXTENSIONS:
+            ext = _content_type_to_ext(response.headers.get("content-type", ""))
+
+        self._breaker.success(domain)
+        if ext in DEFAULTS.COLLECTIBLE_EXTENSIONS:
+            entry = {"url": url, "text": filename, "ext": ext}
+            return CrawlPageResult(
+                task=task, status="ok", url=url, title=filename,
+                files=[entry], extracted={"files": [entry]},
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                group=task.group, extracted_at=now,
+            )
+        # non-collectible binary/asset — skip silently
+        return CrawlPageResult(
+            task=task, status="ok", url=url, title=filename,
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+            group=task.group, extracted_at=now,
+        )
