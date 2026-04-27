@@ -232,3 +232,279 @@ _STEALTH_TEMPLATE = """
   }}
 }})();
 """
+
+
+# ── Per-extract-type DOM evaluators (returned as JS strings) ───────────
+
+_EVAL_HEADLINES = """
+() => {
+  const headlines = [];
+  for (const art of Array.from(document.querySelectorAll('article')).slice(0, 20)) {
+    for (const sel of ['h2','h3','h4','.title','.headline']) {
+      const el = art.querySelector(sel);
+      const text = (el && (el.innerText || el.textContent) || '').trim();
+      if (text.length > 8) { headlines.push(text.slice(0, 120)); break; }
+    }
+  }
+  if (headlines.length < 5) {
+    const seen = new Set(headlines);
+    const cand = Array.from(document.querySelectorAll(
+      "h2 a, h3 a, h4 a, [class*='title'] a, [class*='headline'] a"
+    )).slice(0, 30);
+    for (const el of cand) {
+      const t = (el.innerText || el.textContent || '').trim();
+      if (t.length > 8 && !seen.has(t)) { seen.add(t); headlines.push(t.slice(0, 120)); }
+    }
+  }
+  return { headlines: headlines.slice(0, 15), count: headlines.length };
+}
+"""
+
+_EVAL_STOCK = """
+() => {
+  const get = (field) =>
+    document.querySelector("fin-streamer[data-field='" + field + "']")
+      ?.getAttribute('value') ?? null;
+  const nameEl = document.querySelector("h1[class*='title']")
+    ?? document.querySelector('section h1');
+  return {
+    price: get('regularMarketPrice'),
+    change: get('regularMarketChange'),
+    changePct: get('regularMarketChangePercent'),
+    volume: get('regularMarketVolume'),
+    marketCap: get('marketCap'),
+    dayHigh: get('regularMarketDayHigh'),
+    dayLow: get('regularMarketDayLow'),
+    prevClose: get('regularMarketPreviousClose'),
+    week52High: get('fiftyTwoWeekHigh'),
+    week52Low: get('fiftyTwoWeekLow'),
+    companyName: (nameEl && (nameEl.innerText || nameEl.textContent) || '').trim() || null,
+  };
+}
+"""
+
+_EVAL_INDEX = """
+() => {
+  const pickFirst = (sels) => {
+    for (const sel of sels) {
+      const el = document.querySelector(sel);
+      const t = (el && (el.innerText || el.textContent) || '').trim();
+      if (t && /[\\d,.]/.test(t)) return t;
+    }
+    return null;
+  };
+  return {
+    price: pickFirst([
+      "[data-test='instrument-price-last']", "[class*='last-price']",
+      "[class*='lastPrice']", "[class*='priceSection'] [class*='price']",
+      "span[class*='text-5xl']", ".instrument-price_last-price",
+    ]),
+    change: pickFirst([
+      "[data-test='instrument-price-change']",
+      "[class*='price-change'] [class*='change']",
+    ]),
+    changePct: pickFirst([
+      "[data-test='instrument-price-change-percent']",
+      "[class*='price-change'] [class*='percent']",
+    ]),
+  };
+}
+"""
+
+_EVAL_PREVIEW = """
+() => {
+  const body = document.body && (document.body.innerText || document.body.textContent) || '';
+  return { text_preview: body.slice(0, 500).replace(/\\n/g, ' ').trim() };
+}
+"""
+
+_EVAL_LINKS = """
+() => Array.from(document.querySelectorAll('a[href]'))
+        .map(a => a.href)
+        .filter(h => h && h.startsWith('http'))
+        .slice(0, 50)
+"""
+
+
+_OVERLAY_CLICK_SELECTORS = (
+    "button[name='agree']",
+    "#onetrust-accept-btn-handler",
+    "button[id*='accept']",
+    ".js-accept-cookies",
+    "[data-testid='sign-in-bar-close']",
+    ".popupCloseIcon",
+)
+
+
+class BrowserWorker:
+    """Async Playwright worker. Construct via `await BrowserWorker.launch()`."""
+
+    def __init__(
+        self,
+        playwright: Any,
+        browser: Any,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+        profile: BrowserProfile,
+    ) -> None:
+        self._playwright = playwright
+        self._browser = browser
+        self._breaker = breaker
+        self._limiter = limiter
+        self._profile = profile
+
+    @classmethod
+    async def launch(
+        cls,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+        *,
+        locale: str = DEFAULTS.LOCALE,
+    ) -> "BrowserWorker":
+        from playwright.async_api import async_playwright
+
+        pw = await async_playwright().start()
+        browser = await pw.chromium.launch(
+            headless=True, args=list(DEFAULTS.CHROMIUM_ARGS)
+        )
+        return cls(
+            playwright=pw,
+            browser=browser,
+            breaker=breaker,
+            limiter=limiter,
+            profile=pick_profile(locale),
+        )
+
+    async def close(self) -> None:
+        try:
+            await self._browser.close()
+        finally:
+            await self._playwright.stop()
+
+    async def fetch_one(self, task: BrowserTask) -> BrowserResult:
+        domain = _domain_of(task.url)
+        now = _now_iso()
+        t0 = time.monotonic()
+        timeout = DOMAIN_CONFIG.get(domain, {}).get("timeout", DEFAULTS.BROWSER_TIMEOUT)
+
+        if not self._breaker.allow(domain):
+            return BrowserResult(
+                task=task, status="blocked", url=task.url, group=task.group,
+                extract_type=task.extract_type, extracted_at=now,
+                error="circuit open",
+            )
+
+        await self._limiter.acquire(domain)
+
+        context = await self._make_context()
+        page = await context.new_page()
+        await page.add_init_script(build_stealth_script(self._profile))
+        captured: list[dict[str, Any]] = []
+        page.on("dialog", lambda d: d.dismiss())
+        page.on("response", lambda r: self._capture_endpoint(r, captured))
+
+        try:
+            await with_retry(
+                lambda: page.goto(
+                    task.url, wait_until="domcontentloaded", timeout=timeout * 1000,
+                ),
+                max_retries=task.max_retries,
+            )
+            title = await page.title()
+            if any(c in title.lower() for c in DEFAULTS.CHALLENGE_TITLES):
+                await context.close()
+                self._breaker.failure(domain)
+                return BrowserResult(
+                    task=task, status="blocked", url=task.url, title=title,
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
+                    error="Cloudflare challenge not cleared",
+                    group=task.group, extract_type=task.extract_type,
+                    extracted_at=now,
+                )
+
+            await self._dismiss_overlays(page)
+            extracted = await self._extract(page, task.extract_type)
+            links = await page.evaluate(_EVAL_LINKS)
+
+            await context.close()
+            self._breaker.success(domain)
+
+            return BrowserResult(
+                task=task, status="ok", url=task.url, title=title,
+                extracted=extracted, links=list(links),
+                endpoints=captured,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                group=task.group, extract_type=task.extract_type,
+                extracted_at=now,
+            )
+        except Exception as exc:  # noqa: BLE001 — playwright errors vary
+            try:
+                await context.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._breaker.failure(domain)
+            msg = str(exc)
+            is_timeout = "timeout" in msg.lower()
+            return BrowserResult(
+                task=task, status="timeout" if is_timeout else "error",
+                url=task.url,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                error=msg[:100],
+                endpoints=captured,
+                group=task.group, extract_type=task.extract_type,
+                extracted_at=now,
+            )
+
+    async def _make_context(self) -> Any:
+        p = self._profile
+        return await self._browser.new_context(
+            viewport={"width": p.viewport[0], "height": p.viewport[1]},
+            user_agent=p.user_agent,
+            locale=p.locale,
+            timezone_id=p.timezone,
+            color_scheme="light",
+            extra_http_headers={
+                "Accept-Language": p.accept_language,
+                "sec-ch-ua": p.sec_ch_ua_full,
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": json.dumps(
+                    "Windows" if p.platform.startswith("Win")
+                    else "macOS" if p.platform == "MacIntel"
+                    else "Linux"
+                ),
+            },
+        )
+
+    async def _capture_endpoint(self, response: Any, sink: list[dict[str, Any]]) -> None:
+        url = response.url
+        if "umbraco/Surface" in url or "/api/" in url:
+            try:
+                body = await response.json()
+                if isinstance(body, dict):
+                    sink.append({
+                        "url": url, "method": "GET",
+                        "response_keys": list(body.keys()),
+                    })
+            except Exception:  # noqa: BLE001
+                pass
+
+    async def _dismiss_overlays(self, page: Any) -> None:
+        for sel in _OVERLAY_CLICK_SELECTORS:
+            try:
+                el = await page.wait_for_selector(sel, timeout=800)
+                if el:
+                    await el.click()
+                    await page.wait_for_timeout(300)
+            except Exception:  # noqa: BLE001
+                continue
+
+    async def _extract(self, page: Any, extract_type: str) -> dict[str, Any]:
+        eval_js = {
+            "stock_price": _EVAL_STOCK,
+            "headlines": _EVAL_HEADLINES,
+            "index_price": _EVAL_INDEX,
+        }.get(extract_type, _EVAL_PREVIEW)
+        try:
+            return await page.evaluate(eval_js)
+        except Exception:  # noqa: BLE001
+            return {}
