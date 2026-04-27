@@ -311,3 +311,108 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
 def query_stats() -> dict[str, Any]:
     s = runtime().query().stats()
     return {"ok": True, **s}
+
+
+# ── Crawl tier ─────────────────────────────────────────────────────────
+
+
+def _crawl_worker() -> CrawlWorker:
+    rt = runtime()
+    return CrawlWorker(rt.http_client(), rt._breaker, rt._limiter)
+
+
+async def crawl_locate(url: str) -> dict[str, Any]:
+    """LOCATE: same as browse_locate but returns crawl-specific hints."""
+    base = await probe_one(url)
+    base["base_path"] = urlparse(url).path or "/"
+    return base
+
+
+async def crawl_plan(url: str, max_links: int = 25) -> dict[str, Any]:
+    """INSPECT (dry-run): fetch the seed once and list the would-be frontier."""
+    rt = runtime()
+    worker = _crawl_worker()
+    task = CrawlTask(url=url, crawl_depth=1, max_pages=1)
+    report = await worker.run(task)
+    if not report.pages:
+        return {"ok": False, "error": "fetch_failed"}
+    seed = report.pages[0]
+    return {
+        "ok": seed.status == "ok",
+        "url": seed.url,
+        "title": seed.title,
+        "links": seed.links[:max_links],
+        "files": seed.files[:max_links],
+        "elapsed_ms": seed.elapsed_ms,
+    }
+
+
+async def crawl_run(
+    url: str,
+    max_pages: int | None = None,
+    max_depth: int | None = None,
+    run_id: str | None = None,
+) -> dict[str, Any]:
+    rt = runtime()
+    pages_cap = max_pages if max_pages is not None else get_max_pages()
+    depth_cap = max_depth if max_depth is not None else get_max_depth()
+    rid = run_id or f"crawl-{int(time.time())}"
+    cp = Checkpoint(f"krawl_checkpoint_{rid}.json", run_id=rid)
+
+    worker = _crawl_worker()
+    report = await worker.run(
+        CrawlTask(url=url, crawl_depth=depth_cap, max_pages=pages_cap),
+        checkpoint=cp,
+    )
+    indexer = rt.indexer()
+    for page in report.pages:
+        if page.status != "ok":
+            continue
+        indexer.index(
+            {
+                "url": page.url, "title": page.title,
+                "status": page.status, "mode": page.mode,
+                "elapsed_ms": page.elapsed_ms,
+                "extracted": page.extracted, "group": page.group,
+                "links": page.links,
+                "extractedAt": page.extracted_at,
+            },
+            run_id=rid,
+        )
+    return {
+        "ok": report.errors < len(report.pages),
+        "run_id": report.run_id,
+        "seed_url": report.seed_url,
+        "pages": len(report.pages),
+        "errors": report.errors,
+        "files_discovered": report.files_discovered,
+        "started_at": report.started_at,
+        "finished_at": report.finished_at,
+    }
+
+
+async def crawl_resume(
+    run_id: str, url: str, max_pages: int | None = None
+) -> dict[str, Any]:
+    return await crawl_run(url, max_pages=max_pages, run_id=run_id)
+
+
+def crawl_verify(run_id: str) -> dict[str, Any]:
+    """Return per-run summary from task_log + pages joined."""
+    rt = runtime()
+    rows = rt.query().select(
+        "SELECT COUNT(*) AS pages, "
+        "SUM(CASE WHEN status='error' THEN 1 ELSE 0 END) AS errors "
+        "FROM task_log WHERE run_id = ?",
+        params=(run_id,),
+        limit=1,
+    )
+    if not rows:
+        return {"ok": False, "run_id": run_id, "error": "not_found"}
+    row = rows[0]
+    return {
+        "ok": True,
+        "run_id": run_id,
+        "pages": int(row["pages"] or 0),
+        "errors": int(row["errors"] or 0),
+    }
