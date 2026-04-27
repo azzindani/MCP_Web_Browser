@@ -135,3 +135,146 @@ def _parse_brave(body: str, cap: int) -> list[SearchHit]:
             )
         )
     return hits
+
+
+class SearchWorker:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+        searxng_url: str = _SEARXNG_URL,
+    ) -> None:
+        self._client = client
+        self._breaker = breaker
+        self._limiter = limiter
+        self._searxng_url = searxng_url.rstrip("/")
+
+    async def search(
+        self, query: str, limit: int | None = None
+    ) -> SearchResult:
+        cap = limit if limit is not None else get_max_results()
+        t0 = time.monotonic()
+        for backend in ("searxng", "ddg", "brave"):
+            hits = await self._try_backend(backend, query, cap)
+            if hits:
+                return SearchResult(
+                    query=query,
+                    hits=hits[:cap],
+                    backend=backend,
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
+                    truncated=len(hits) > cap,
+                    total=len(hits),
+                    fetched_at=_now_iso(),
+                )
+        return SearchResult(
+            query=query, hits=[], backend="none",
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+            truncated=False, total=0, fetched_at=_now_iso(),
+        )
+
+    async def _try_backend(
+        self, backend: str, query: str, cap: int
+    ) -> list[SearchHit]:
+        try:
+            if backend == "searxng":
+                return await self._searxng(query, cap)
+            if backend == "ddg":
+                return await self._ddg(query, cap)
+            if backend == "brave":
+                return await self._brave(query, cap)
+        except (httpx.HTTPError, ValueError):
+            return []
+        return []
+
+    async def _searxng(self, query: str, cap: int) -> list[SearchHit]:
+        domain = _domain_of(self._searxng_url) or "searxng"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        url = f"{self._searxng_url}/search"
+        try:
+            response = await with_retry(
+                lambda: self._client.get(
+                    url,
+                    params={"q": query, "format": "json", "safesearch": "0"},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        try:
+            data = response.json()
+        except ValueError:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        hits: list[SearchHit] = []
+        for item in data.get("results", [])[:cap]:
+            url_ = item.get("url")
+            if not isinstance(url_, str):
+                continue
+            hits.append(
+                SearchHit(
+                    title=str(item.get("title") or ""),
+                    url=url_,
+                    snippet=str(item.get("content") or ""),
+                    backend="searxng",
+                )
+            )
+        return hits
+
+    async def _ddg(self, query: str, cap: int) -> list[SearchHit]:
+        domain = "html.duckduckgo.com"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        try:
+            response = await with_retry(
+                lambda: self._client.post(
+                    _DDG_URL,
+                    data={"q": query},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        return _parse_ddg(response.text, cap)
+
+    async def _brave(self, query: str, cap: int) -> list[SearchHit]:
+        domain = "search.brave.com"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        try:
+            response = await with_retry(
+                lambda: self._client.get(
+                    _BRAVE_URL,
+                    params={"q": query, "source": "web"},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        return _parse_brave(response.text, cap)
+
+    @staticmethod
+    def encode_query(query: str) -> str:
+        return quote_plus(query)
