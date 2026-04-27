@@ -9,23 +9,32 @@ real connections.
 
 from __future__ import annotations
 
+import json
 import sqlite3
+import time
 from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
 from engine.config.defaults import DEFAULTS
+from engine.core.checkpoint import Checkpoint
 from engine.db.indexer import Indexer
-from engine.db.query import QueryEngine
+from engine.db.query import STATS_TABLES, QueryEngine
 from engine.db.schema import init_schema
 from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
+from engine.workers.crawl_worker import CrawlTask, CrawlWorker
 from engine.workers.http_worker import HttpWorker, Task
 from engine.workers.search_worker import SearchWorker
 from shared.path_safety import resolve_path
-from shared.platform_utils import get_inspect_chars
-from shared.version_control import snapshot
+from shared.platform_utils import (
+    get_inspect_chars,
+    get_max_depth,
+    get_max_pages,
+    get_max_rows,
+)
+from shared.version_control import atomic_write_text, snapshot
 
 
 class _Runtime:
@@ -227,3 +236,78 @@ def verify_one(url: str) -> dict[str, Any]:
 
 def engine_status() -> dict[str, Any]:
     return runtime().status()
+
+
+# ── Query tier ─────────────────────────────────────────────────────────
+
+
+def query_locate() -> dict[str, Any]:
+    """List tables + row counts. Surgical."""
+    s = runtime().query().stats()
+    tables = {k: v for k, v in s.items() if k != "db_bytes"}
+    return {"ok": True, "tables": tables, "db_bytes": s.get("db_bytes", 0)}
+
+
+def query_search(
+    query: str, table: str = "fts_pages", limit: int | None = None
+) -> dict[str, Any]:
+    rt = runtime()
+    cap = limit if limit is not None else get_max_rows()
+    try:
+        rows = rt.query().search(query, table=table, limit=cap)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "hint": "table must be fts_pages|fts_news|fts_files"}
+    return {
+        "ok": True,
+        "table": table,
+        "query": query,
+        "rows": rows,
+        "total": len(rows),
+        "truncated": len(rows) >= cap,
+    }
+
+
+def query_select(
+    sql: str, params: tuple[Any, ...] = (), limit: int | None = None
+) -> dict[str, Any]:
+    rt = runtime()
+    cap = limit if limit is not None else get_max_rows()
+    try:
+        rows = rt.query().select(sql, params=params, limit=cap)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "hint": "only SELECT/WITH allowed"}
+    return {
+        "ok": True,
+        "rows": rows,
+        "total": len(rows),
+        "truncated": len(rows) >= cap,
+    }
+
+
+def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
+    if fmt not in ("csv", "json"):
+        return {"ok": False, "error": "bad_format", "hint": "fmt must be csv|json"}
+    if table not in STATS_TABLES:
+        return {"ok": False, "error": "unknown_table", "hint": f"table not in {sorted(STATS_TABLES)}"}
+    rt = runtime()
+    try:
+        if fmt == "csv":
+            text = rt.query().to_csv(table)
+        else:
+            rows = rt.query().select(
+                f"SELECT * FROM {table}",  # noqa: S608 — whitelisted above
+                limit=100_000,
+            )
+            text = json.dumps(rows, indent=2, default=str)
+    except (ValueError, sqlite3.OperationalError) as exc:
+        return {"ok": False, "error": str(exc)[:80], "hint": "export_failed"}
+
+    target = resolve_path(out_path)
+    snapshot(target)
+    atomic_write_text(target, text)
+    return {"ok": True, "path": str(target), "bytes": len(text)}
+
+
+def query_stats() -> dict[str, Any]:
+    s = runtime().query().stats()
+    return {"ok": True, **s}
