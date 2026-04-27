@@ -1,0 +1,34 @@
+{
+  "$schema": "https://modelcontextprotocol.io/schema/mcp.json",
+  "mcpServers": {
+    "mcp_web_browser": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${HOME}/.mcp/mcp_web_browser",
+        "--with-requirements",
+        "${HOME}/.mcp/mcp_web_browser/pyproject.toml",
+        "python",
+        "${HOME}/.mcp/mcp_web_browser/server.py"
+      ],
+      "env": {
+        "MCP_DATA_ROOT": "${HOME}/.mcp/mcp_web_browser",
+        "MCP_CONSTRAINED_MODE": "1",
+        "MCP_TIER_BASIC": "1",
+        "MCP_TIER_QUERY": "1",
+        "MCP_TIER_CRAWL": "0",
+        "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888"
+      }
+    }
+  },
+  "_install": {
+    "description": "Self-updating launcher. Clones on first run, pulls on each subsequent run.",
+    "preLaunch": [
+      "test -d ${HOME}/.mcp/mcp_web_browser || git clone https://github.com/azzindani/mcp_web_browser.git ${HOME}/.mcp/mcp_web_browser",
+      "cd ${HOME}/.mcp/mcp_web_browser && git pull --ff-only",
+      "cd ${HOME}/.mcp/mcp_web_browser && uv sync",
+      "cd ${HOME}/.mcp/mcp_web_browser && uv run playwright install chromium"
+    ]
+  }
+}
