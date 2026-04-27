@@ -233,45 +233,45 @@ built-ins.
 
 ### 7.1 Milestones
 
-- [ ] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/mypy/pytest)
-- [ ] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
-- [ ] **M3** — `engine/workers/http_worker.py` + resilience layer
-- [ ] **M3b** — `engine/workers/search_worker.py` (SearXNG / DDG / Brave)
-- [ ] **M4** — `engine/workers/browser_worker.py` (Playwright stealth)
-- [ ] **M5** — `engine/workers/crawl_worker.py` + checkpoint resume
-- [ ] **M6** — `server.py` + Basic tier (6 tools incl. `browse_search`)
-- [ ] **M7** — Query tier + Crawl tier (10 more tools)
-- [ ] **M8** — `mcp.json` self-update flow + README + CI
+- [x] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/mypy/pytest)
+- [x] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
+- [x] **M3** — `engine/workers/http_worker.py` + resilience layer
+- [x] **M3b** — `engine/workers/search_worker.py` (SearXNG / DDG / Brave)
+- [x] **M4** — `engine/workers/browser_worker.py` (Playwright stealth)
+- [x] **M5** — `engine/workers/crawl_worker.py` + checkpoint resume
+- [x] **M6** — `server.py` + Basic tier (6 tools incl. `browse_search`)
+- [x] **M7** — Query tier + Crawl tier (10 more tools)
+- [x] **M8** — `mcp.json` self-update flow + README + CI
 
 ### 7.2 Tool surface
 
 | Tier    | Tool             | Role     | Status |
 |---------|------------------|----------|--------|
-| basic   | `browse_search`  | LOCATE   | [ ]    |
-| basic   | `browse_locate`  | LOCATE   | [ ]    |
-| basic   | `browse_inspect` | INSPECT  | [ ]    |
-| basic   | `browse_fetch`   | PATCH    | [ ]    |
-| basic   | `browse_verify`  | VERIFY   | [ ]    |
-| basic   | `browse_status`  | aux      | [ ]    |
-| query   | `query_locate`   | LOCATE   | [ ]    |
-| query   | `query_search`   | INSPECT  | [ ]    |
-| query   | `query_select`   | INSPECT  | [ ]    |
-| query   | `query_export`   | PATCH    | [ ]    |
-| query   | `query_stats`    | VERIFY   | [ ]    |
-| crawl   | `crawl_locate`   | LOCATE   | [ ]    |
-| crawl   | `crawl_plan`     | INSPECT  | [ ]    |
-| crawl   | `crawl_run`      | PATCH    | [ ]    |
-| crawl   | `crawl_resume`   | PATCH    | [ ]    |
-| crawl   | `crawl_verify`   | VERIFY   | [ ]    |
+| basic   | `browse_search`  | LOCATE   | [x]    |
+| basic   | `browse_locate`  | LOCATE   | [x]    |
+| basic   | `browse_inspect` | INSPECT  | [x]    |
+| basic   | `browse_fetch`   | PATCH    | [x]    |
+| basic   | `browse_verify`  | VERIFY   | [x]    |
+| basic   | `browse_status`  | aux      | [x]    |
+| query   | `query_locate`   | LOCATE   | [x]    |
+| query   | `query_search`   | INSPECT  | [x]    |
+| query   | `query_select`   | INSPECT  | [x]    |
+| query   | `query_export`   | PATCH    | [x]    |
+| query   | `query_stats`    | VERIFY   | [x]    |
+| crawl   | `crawl_locate`   | LOCATE   | [x]    |
+| crawl   | `crawl_plan`     | INSPECT  | [x]    |
+| crawl   | `crawl_run`      | PATCH    | [x]    |
+| crawl   | `crawl_resume`   | PATCH    | [x]    |
+| crawl   | `crawl_verify`   | VERIFY   | [x]    |
 
 ### 7.3 Compliance gates (CI)
 
-- [ ] No `mcp` imports inside `engine/**` or `shared/**`
-- [ ] All tool docstrings ≤ 80 characters
-- [ ] Combined schema budget ≤ 700 tokens per tier
-- [ ] `MCP_CONSTRAINED_MODE` honoured at call time (test via monkeypatch)
+- [x] No `mcp` imports inside `engine/**` or `shared/**`
+- [x] All tool docstrings ≤ 80 characters
+- [x] Combined schema budget ≤ 700 tokens per tier
+- [x] `MCP_CONSTRAINED_MODE` honoured at call time (test via monkeypatch)
 - [ ] `snapshot()` invoked before every persistent write (audit script)
-- [ ] No stdout writes from any module reachable by `server.py`
+- [x] No stdout writes from any module reachable by `server.py`
 
 ## 8. References
 
