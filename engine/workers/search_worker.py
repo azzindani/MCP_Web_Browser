@@ -1,0 +1,280 @@
+"""Web search worker. Keyless backends, tried in priority order.
+
+Order: SearXNG (self-hosted JSON API) → DuckDuckGo HTML → Brave HTML.
+Browser-rendered fallback is not implemented here; the scheduler can
+upgrade a failed search to `browser_worker.search()` if it wants to.
+
+The worker reuses the same circuit-breaker, rate-limiter, and retry
+layer as the HTTP worker — search endpoints are just URLs.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from html import unescape
+from typing import Final
+from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
+
+import httpx
+
+from engine.config.defaults import DEFAULTS
+from engine.resilience.circuit_breaker import CircuitBreaker
+from engine.resilience.rate_limiter import RateLimiter
+from engine.resilience.retry import with_retry
+from shared.platform_utils import get_max_results
+
+_SEARXNG_URL: Final[str] = os.environ.get(
+    "MCP_SEARCH_BACKEND", "http://127.0.0.1:8888"
+)
+_DDG_URL: Final[str] = "https://html.duckduckgo.com/html/"
+_BRAVE_URL: Final[str] = "https://search.brave.com/search"
+
+
+@dataclass(slots=True)
+class SearchHit:
+    title: str
+    url: str
+    snippet: str
+    backend: str
+
+
+@dataclass(slots=True)
+class SearchResult:
+    query: str
+    hits: list[SearchHit]
+    backend: str  # "searxng" | "ddg" | "brave" | "none"
+    elapsed_ms: int
+    truncated: bool
+    total: int  # before truncation
+    fetched_at: str
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _domain_of(url: str) -> str:
+    try:
+        return urlparse(url).hostname or url
+    except ValueError:
+        return url
+
+
+# ── Body parsers (no HTML library; surgical regex on bounded chunks) ──
+
+_DDG_RESULT_RE = re.compile(
+    r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
+    r'.*?<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+
+_BRAVE_RESULT_RE = re.compile(
+    r'<div[^>]+data-type="web"[^>]*>.*?'
+    r'<a[^>]+href="(https?://[^"]+)"[^>]*>.*?'
+    r'<span[^>]+class="title[^"]*"[^>]*>(.*?)</span>.*?'
+    r'<div[^>]+class="snippet[^"]*"[^>]*>(.*?)</div>',
+    re.DOTALL,
+)
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_tags(s: str) -> str:
+    return unescape(_TAG_RE.sub("", s)).strip()
+
+
+def _resolve_ddg_redirect(href: str) -> str:
+    """DDG HTML wraps each result URL in /l/?uddg=…&kh=…&rut=…."""
+    if href.startswith("/l/?") or href.startswith("//duckduckgo.com/l/?"):
+        try:
+            qs = parse_qs(urlparse(urljoin("https://duckduckgo.com/", href)).query)
+            uddg = qs.get("uddg") or []
+            if uddg:
+                return uddg[0]
+        except ValueError:
+            pass
+    return href
+
+
+def _parse_ddg(body: str, cap: int) -> list[SearchHit]:
+    hits: list[SearchHit] = []
+    for match in _DDG_RESULT_RE.finditer(body):
+        if len(hits) >= cap:
+            break
+        href, raw_title, raw_snippet = match.groups()
+        url = _resolve_ddg_redirect(unescape(href))
+        if not url.startswith("http"):
+            continue
+        hits.append(
+            SearchHit(
+                title=_strip_tags(raw_title),
+                url=url,
+                snippet=_strip_tags(raw_snippet),
+                backend="ddg",
+            )
+        )
+    return hits
+
+
+def _parse_brave(body: str, cap: int) -> list[SearchHit]:
+    hits: list[SearchHit] = []
+    for match in _BRAVE_RESULT_RE.finditer(body):
+        if len(hits) >= cap:
+            break
+        href, raw_title, raw_snippet = match.groups()
+        hits.append(
+            SearchHit(
+                title=_strip_tags(raw_title),
+                url=unescape(href),
+                snippet=_strip_tags(raw_snippet),
+                backend="brave",
+            )
+        )
+    return hits
+
+
+class SearchWorker:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+        searxng_url: str = _SEARXNG_URL,
+    ) -> None:
+        self._client = client
+        self._breaker = breaker
+        self._limiter = limiter
+        self._searxng_url = searxng_url.rstrip("/")
+
+    async def search(
+        self, query: str, limit: int | None = None
+    ) -> SearchResult:
+        cap = limit if limit is not None else get_max_results()
+        t0 = time.monotonic()
+        for backend in ("searxng", "ddg", "brave"):
+            hits = await self._try_backend(backend, query, cap)
+            if hits:
+                return SearchResult(
+                    query=query,
+                    hits=hits[:cap],
+                    backend=backend,
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
+                    truncated=len(hits) > cap,
+                    total=len(hits),
+                    fetched_at=_now_iso(),
+                )
+        return SearchResult(
+            query=query, hits=[], backend="none",
+            elapsed_ms=int((time.monotonic() - t0) * 1000),
+            truncated=False, total=0, fetched_at=_now_iso(),
+        )
+
+    async def _try_backend(
+        self, backend: str, query: str, cap: int
+    ) -> list[SearchHit]:
+        try:
+            if backend == "searxng":
+                return await self._searxng(query, cap)
+            if backend == "ddg":
+                return await self._ddg(query, cap)
+            if backend == "brave":
+                return await self._brave(query, cap)
+        except (httpx.HTTPError, ValueError):
+            return []
+        return []
+
+    async def _searxng(self, query: str, cap: int) -> list[SearchHit]:
+        domain = _domain_of(self._searxng_url) or "searxng"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        url = f"{self._searxng_url}/search"
+        try:
+            response = await with_retry(
+                lambda: self._client.get(
+                    url,
+                    params={"q": query, "format": "json", "safesearch": "0"},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        try:
+            data = response.json()
+        except ValueError:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        hits: list[SearchHit] = []
+        for item in data.get("results", [])[:cap]:
+            url_ = item.get("url")
+            if not isinstance(url_, str):
+                continue
+            hits.append(
+                SearchHit(
+                    title=str(item.get("title") or ""),
+                    url=url_,
+                    snippet=str(item.get("content") or ""),
+                    backend="searxng",
+                )
+            )
+        return hits
+
+    async def _ddg(self, query: str, cap: int) -> list[SearchHit]:
+        domain = "html.duckduckgo.com"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        try:
+            response = await with_retry(
+                lambda: self._client.post(
+                    _DDG_URL,
+                    data={"q": query},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        return _parse_ddg(response.text, cap)
+
+    async def _brave(self, query: str, cap: int) -> list[SearchHit]:
+        domain = "search.brave.com"
+        if not self._breaker.allow(domain):
+            return []
+        await self._limiter.acquire(domain)
+        try:
+            response = await with_retry(
+                lambda: self._client.get(
+                    _BRAVE_URL,
+                    params={"q": query, "source": "web"},
+                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+        except httpx.HTTPError:
+            self._breaker.failure(domain)
+            return []
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return []
+        self._breaker.success(domain)
+        return _parse_brave(response.text, cap)
+
+    @staticmethod
+    def encode_query(query: str) -> str:
+        return quote_plus(query)
