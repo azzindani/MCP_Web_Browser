@@ -94,3 +94,141 @@ def build_stealth_script(p: BrowserProfile) -> str:
         webgl_renderer=json.dumps(p.webgl_renderer),
         platform_short=json.dumps(platform_value),
     )
+
+
+# Doubled `{{` `}}` escapes are required by str.format below.
+_STEALTH_TEMPLATE = """
+(function() {{
+  // Remove automation markers
+  Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
+  delete window.__nightmare;
+  delete window._phantom;
+  delete window.callPhantom;
+  Object.keys(window).filter(k => k.startsWith('cdc_')).forEach(k => {{
+    try {{ delete window[k]; }} catch (e) {{}}
+  }});
+
+  const overrides = {{
+    platform: {platform},
+    hardwareConcurrency: {hardware},
+    deviceMemory: {memory},
+    maxTouchPoints: {touch},
+    languages: {languages},
+  }};
+  for (const [k, v] of Object.entries(overrides)) {{
+    try {{
+      Object.defineProperty(navigator, k, {{ get: () => v, configurable: true }});
+    }} catch (e) {{}}
+  }}
+
+  Object.defineProperty(navigator, 'plugins', {{
+    get: () => {{
+      const arr = [
+        {{ filename: 'internal-pdf-viewer', description: 'Portable Document Format', name: 'Chrome PDF Plugin' }},
+        {{ filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: 'Portable Document Format', name: 'Chrome PDF Viewer' }},
+        {{ filename: 'internal-nacl-plugin', description: 'Native Client', name: 'Native Client' }},
+      ];
+      arr.refresh = () => {{}};
+      arr.item = (i) => arr[i] ?? null;
+      arr.namedItem = (n) => arr.find(p => p.name === n) ?? null;
+      return arr;
+    }},
+    configurable: true,
+  }});
+
+  window.chrome = window.chrome || {{}};
+  window.chrome.runtime = window.chrome.runtime || {{
+    connect: () => ({{}}),
+    sendMessage: () => {{}},
+    onMessage: {{ addListener: () => {{}} }},
+    id: undefined,
+  }};
+  window.chrome.loadTimes = () => ({{}});
+  window.chrome.csi = () => ({{}});
+  window.chrome.app = {{}};
+
+  try {{
+    Object.defineProperty(screen, 'width',       {{ get: () => {screen_w} }});
+    Object.defineProperty(screen, 'height',      {{ get: () => {screen_h} }});
+    Object.defineProperty(screen, 'availWidth',  {{ get: () => {screen_w} }});
+    Object.defineProperty(screen, 'availHeight', {{ get: () => {avail_h} }});
+    Object.defineProperty(screen, 'colorDepth',  {{ get: () => {color} }});
+    Object.defineProperty(screen, 'pixelDepth',  {{ get: () => {color} }});
+  }} catch (e) {{}}
+
+  if (window.outerWidth === 0) {{
+    Object.defineProperty(window, 'outerWidth',  {{ get: () => window.innerWidth }});
+    Object.defineProperty(window, 'outerHeight', {{ get: () => window.innerHeight }});
+  }}
+
+  const NOISE = {canvas_noise};
+  const _toDataURL = HTMLCanvasElement.prototype.toDataURL;
+  const _getImageData = CanvasRenderingContext2D.prototype.getImageData;
+  HTMLCanvasElement.prototype.toDataURL = function (...args) {{
+    const ctx = this.getContext('2d');
+    if (ctx) {{
+      const imgData = ctx.getImageData(0, 0, this.width || 1, this.height || 1);
+      for (let i = 0; i < imgData.data.length; i += 4) {{
+        imgData.data[i] = Math.min(255, imgData.data[i] + NOISE * 255);
+        imgData.data[i + 1] = Math.min(255, imgData.data[i + 1] + NOISE * 255);
+        imgData.data[i + 2] = Math.min(255, imgData.data[i + 2] + NOISE * 255);
+      }}
+      ctx.putImageData(imgData, 0, 0);
+    }}
+    return _toDataURL.apply(this, args);
+  }};
+  CanvasRenderingContext2D.prototype.getImageData = function (...args) {{
+    const data = _getImageData.apply(this, args);
+    for (let i = 0; i < data.data.length; i += 4) {{
+      data.data[i] = Math.min(255, data.data[i] + (Math.random() - 0.5) * NOISE * 255);
+      data.data[i + 1] = Math.min(255, data.data[i + 1] + (Math.random() - 0.5) * NOISE * 255);
+      data.data[i + 2] = Math.min(255, data.data[i + 2] + (Math.random() - 0.5) * NOISE * 255);
+    }}
+    return data;
+  }};
+
+  const WGL_VENDOR = {webgl_vendor};
+  const WGL_RENDERER = {webgl_renderer};
+  const _getParam = WebGLRenderingContext.prototype.getParameter;
+  WebGLRenderingContext.prototype.getParameter = function (param) {{
+    if (param === 37445) return WGL_VENDOR;
+    if (param === 37446) return WGL_RENDERER;
+    return _getParam.call(this, param);
+  }};
+  if (typeof WebGL2RenderingContext !== 'undefined') {{
+    const _g2 = WebGL2RenderingContext.prototype.getParameter;
+    WebGL2RenderingContext.prototype.getParameter = function (param) {{
+      if (param === 37445) return WGL_VENDOR;
+      if (param === 37446) return WGL_RENDERER;
+      return _g2.call(this, param);
+    }};
+  }}
+
+  if ('getBattery' in navigator) {{
+    navigator.getBattery = () => Promise.resolve({{
+      charging: true, chargingTime: 0, dischargingTime: Infinity, level: 1.0,
+      addEventListener: () => {{}}, removeEventListener: () => {{}}, dispatchEvent: () => true,
+    }});
+  }}
+
+  if (navigator.permissions) {{
+    const _query = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (params) => {{
+      const grant = ['notifications', 'clipboard-read', 'clipboard-write'];
+      if (grant.includes(params.name)) {{
+        return Promise.resolve({{ state: 'granted', onchange: null,
+          addEventListener: () => {{}}, removeEventListener: () => {{}},
+          dispatchEvent: () => true }});
+      }}
+      return _query(params);
+    }};
+  }}
+
+  if (!navigator.connection) {{
+    Object.defineProperty(navigator, 'connection', {{
+      get: () => ({{ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }}),
+      configurable: true,
+    }});
+  }}
+}})();
+"""
