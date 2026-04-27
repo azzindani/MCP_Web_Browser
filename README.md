@@ -89,3 +89,96 @@ to stay under the cap.
 | `crawl_run`      | PATCH    | Bounded crawl. Indexes pages, returns receipt.         |
 | `crawl_resume`   | PATCH    | Resume a crawl run from its checkpoint.                |
 | `crawl_verify`   | VERIFY   | Run summary: pages, errors, dead-letter.               |
+
+---
+
+## Configuration
+
+All limits and storage paths flow through env vars. Defaults are tuned
+for an 8 GB-VRAM / 9B-Q4 host.
+
+| Variable               | Default                       | Purpose                              |
+|------------------------|-------------------------------|--------------------------------------|
+| `MCP_DATA_ROOT`        | current working directory     | Root for `*.db`, `*.jsonl`, exports  |
+| `MCP_CONSTRAINED_MODE` | `0` (`1` in `mcp.json`)       | Shrinks every read/write cap         |
+| `MCP_TIER_BASIC`       | `1`                           | Toggle the Basic tier (browse_*)     |
+| `MCP_TIER_QUERY`       | `1`                           | Toggle the Query tier (query_*)      |
+| `MCP_TIER_CRAWL`       | `0`                           | Toggle the Crawl tier (crawl_*)      |
+| `MCP_SEARCH_BACKEND`   | `http://127.0.0.1:8888`       | SearXNG base URL (DDG/Brave fallback)|
+
+### Constrained-mode caps
+
+| Cap                       | Constrained | Default |
+|---------------------------|-------------|---------|
+| Rows per `query_*` call   | 20          | 100     |
+| Search hits per call      | 10          | 50      |
+| `crawl_run` max pages     | 25          | 250     |
+| `crawl_run` max depth     | 3           | 5       |
+| Inspect body chars        | 500         | 2 000   |
+
+---
+
+## Architecture
+
+```
+mcp_web_browser/
+│
+├── server.py            ← MCP entrypoint. THIN. One-liner tools only.
+├── mcp.json             ← Self-updating launcher (clone+pull+sync)
+├── pyproject.toml
+│
+├── engine/              ← Pure Python. ZERO `mcp.*` imports anywhere.
+│   ├── __init__.py      ← Public entry points called by server.py
+│   ├── core/            ← queue, router, scheduler, checkpoint, timer
+│   ├── workers/         ← http, browser, crawl, search, fingerprint, tls
+│   ├── resilience/      ← circuit_breaker, rate_limiter, retry
+│   ├── db/              ← schema, indexer, query (SQLite + FTS5, WAL)
+│   ├── output/          ← stream (JSONL), export (CSV/JSON), display
+│   └── config/          ← defaults, per-domain overrides
+│
+├── shared/              ← Cross-cutting helpers
+│   ├── platform_utils   ← is_constrained_mode(), get_max_rows()
+│   ├── path_safety      ← resolve_path()
+│   └── version_control  ← snapshot() / atomic_write_*
+│
+└── tests/   unit/  smoke/  integration/  e2e/
+```
+
+Tools are one-liners that delegate to engine functions; the engine
+never imports `mcp.*`, so every module is unit-testable without the
+SDK installed.
+
+---
+
+## Development
+
+```sh
+git clone https://github.com/azzindani/mcp_web_browser.git
+cd mcp_web_browser
+uv sync
+uv run ruff check .
+uv run mypy engine shared server.py
+uv run pytest -q
+```
+
+The unit suite runs offline (mocked httpx, in-memory SQLite). One
+integration test launches real Chromium when `MCP_BROWSER_TESTS=1`.
+
+For the design and milestone tracker see [`PORT_PLAN.md`](PORT_PLAN.md)
+and [`CLAUDE.md`](CLAUDE.md). The governing standard is
+[`azzindani/Standards/local_mcp/STANDARDS.md`](https://github.com/azzindani/Standards/blob/main/local_mcp/STANDARDS.md).
+
+---
+
+## Uninstall
+
+```sh
+rm -rf ~/.mcp/mcp_web_browser
+# remove the mcp_web_browser entry from your host's mcp.json
+```
+
+---
+
+## License
+
+MIT
