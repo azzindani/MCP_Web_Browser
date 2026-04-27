@@ -83,3 +83,155 @@ class HttpResult:
     group: str = ""
     ticker: str | None = None
     extracted_at: str = ""
+
+
+def _parse_yahoo_chart(body: Any) -> dict[str, Any]:
+    """Normalise Yahoo `chart` payload into the flat shape the indexer expects."""
+    try:
+        chart = body["chart"]
+        result_list = chart.get("result") or []
+        if not result_list:
+            return {}
+        meta = (result_list[0] or {}).get("meta") or {}
+        price = meta.get("regularMarketPrice")
+        prev_close = meta.get("chartPreviousClose")
+        change = meta.get("regularMarketChange")
+        if change is None and price is not None and prev_close is not None:
+            change = round(price - prev_close, 4)
+        change_pct = meta.get("regularMarketChangePercent")
+        if (
+            change_pct is None
+            and price is not None
+            and prev_close not in (None, 0)
+        ):
+            change_pct = round((price - prev_close) / prev_close * 100, 4)
+        return {
+            "price": price,
+            "change": change,
+            "changePct": change_pct,
+            "prevClose": prev_close,
+            "currency": meta.get("currency") or "IDR",
+            "exchange": meta.get("exchangeName") or "",
+            "company": meta.get("longName") or "",
+        }
+    except (KeyError, TypeError, IndexError, AttributeError):
+        return {}
+
+
+def _is_botwall(text: str) -> bool:
+    lower = text.lower()
+    return any(p in lower for p in BOT_BODY_PATTERNS)
+
+
+class HttpWorker:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        breaker: CircuitBreaker,
+        limiter: RateLimiter,
+    ) -> None:
+        self._client = client
+        self._breaker = breaker
+        self._limiter = limiter
+
+    @classmethod
+    def make_client(cls, timeout: float = DEFAULTS.HTTP_TIMEOUT) -> httpx.AsyncClient:
+        """Construct a default httpx client. Use as a context manager."""
+        return httpx.AsyncClient(
+            http2=True,
+            follow_redirects=True,
+            timeout=timeout,
+            headers=_BASE_HEADERS,
+        )
+
+    async def fetch_one(self, task: Task) -> HttpResult:
+        domain = _domain_of(task.url)
+        mode = "http_curl" if task.mode == "http_curl" else "http_json"
+        now = _now_iso()
+        t0 = time.monotonic()
+
+        if not self._breaker.allow(domain):
+            return HttpResult(
+                task=task, status="skipped", mode=mode, url=task.url,
+                error="circuit open", group=task.group, extracted_at=now,
+            )
+
+        await self._limiter.acquire(domain)
+
+        timeout = DOMAIN_CONFIG.get(domain, {}).get("timeout", DEFAULTS.HTTP_TIMEOUT)
+        headers = _CURL_HEADERS if mode == "http_curl" else _BASE_HEADERS
+        referer = f"https://{domain}/"
+
+        try:
+            response = await with_retry(
+                lambda: self._client.get(
+                    task.url,
+                    headers={**headers, "Referer": referer},
+                    timeout=timeout,
+                ),
+                max_retries=task.max_retries,
+            )
+        except httpx.HTTPError as exc:
+            self._breaker.failure(domain)
+            return HttpResult(
+                task=task, status="error", mode=mode, url=task.url,
+                elapsed_ms=int((time.monotonic() - t0) * 1000),
+                error=str(exc)[:100], group=task.group, extracted_at=now,
+            )
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+        if response.status_code >= 400:
+            self._breaker.failure(domain)
+            return HttpResult(
+                task=task, status="error", mode=mode, url=task.url,
+                elapsed_ms=elapsed_ms,
+                error=f"HTTP {response.status_code}",
+                group=task.group, extracted_at=now,
+            )
+
+        body, text = self._parse_body(response)
+
+        if isinstance(text, str) and _is_botwall(text):
+            self._breaker.failure(domain)
+            return HttpResult(
+                task=task, status="blocked", mode=mode, url=task.url,
+                elapsed_ms=elapsed_ms,
+                error="bot-wall detected in response body",
+                group=task.group, extracted_at=now,
+            )
+
+        self._breaker.success(domain)
+
+        extracted, title = self._classify_payload(body, task)
+
+        return HttpResult(
+            task=task, status="ok", mode=mode, url=task.url,
+            title=title,
+            extracted=extracted,
+            elapsed_ms=elapsed_ms,
+            group=task.group,
+            ticker=task.name if task.group == "Yahoo" else None,
+            extracted_at=now,
+        )
+
+    @staticmethod
+    def _parse_body(response: httpx.Response) -> tuple[Any, str]:
+        text = response.text
+        content_type = response.headers.get("content-type", "")
+        if "json" in content_type or text.lstrip().startswith(("{", "[")):
+            try:
+                return response.json(), text
+            except ValueError:
+                pass
+        return text, text
+
+    @staticmethod
+    def _classify_payload(body: Any, task: Task) -> tuple[dict[str, Any], str]:
+        if isinstance(body, dict) and "chart" in body:
+            extracted = _parse_yahoo_chart(body)
+            title = str(extracted.get("company") or task.name or "")
+            return extracted, title
+        if isinstance(body, dict):
+            return body, task.name
+        return {}, task.name
