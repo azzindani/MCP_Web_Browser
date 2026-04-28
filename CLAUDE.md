@@ -45,13 +45,14 @@ mcp_web_browser/
 ├── PORT_PLAN.md
 │
 ├── engine/                    ← pure Python. ZERO MCP imports.
+│   ├── cli.py       optional standalone CLI (no MCP)
 │   ├── core/        queue, router, scheduler, checkpoint, timer
 │   ├── workers/     http, browser, crawl, search, fingerprint, tls
 │   ├── resilience/  circuit_breaker, rate_limiter, retry
 │   ├── db/          schema, indexer, query  (SQLite + FTS5, WAL mode)
 │   ├── output/      stream (JSONL), export (CSV/JSON), display
 │   ├── config/      defaults, domains
-│   └── selectors/   per-domain extraction selectors
+│   └── selectors/   per-domain CSS selectors (get(domain) → dict)
 │
 ├── shared/                    ← cross-cutting helpers
 │   ├── platform_utils.py    is_constrained_mode(), get_max_rows()
@@ -105,6 +106,17 @@ Every tool that mutates persistent state calls
 `shared.version_control.snapshot()` first. Atomic rename pattern for
 JSONL/checkpoint/router-cache files; SQLite uses WAL with
 `busy_timeout=5000` and a final checkpoint at run end.
+
+Coverage by module:
+
+| Module                      | snapshot() call site          |
+|-----------------------------|-------------------------------|
+| `engine/__init__.py`        | before `sqlite3.connect()`    |
+| `engine/__init__.py`        | before `query_export()` write |
+| `engine/core/router.py`     | inside `_save_cache()`        |
+| `engine/core/checkpoint.py` | inside `atomic_write_text()`  |
+| `engine/output/export.py`   | before every file write       |
+| `shared/version_control.py` | `atomic_write_bytes()` caller |
 
 ### 3.5 Chunked file writes (avoid single-shot timeouts)
 
@@ -208,7 +220,7 @@ built-ins.
   header, then Edit/append one section at a time).
 - Never rebase, force-push, or amend on shared branches.
 - Never push to `main`. Development happens on
-  `claude/port-krawl-mcp-fY8xW`.
+  `claude/review-project-completion-y6bds`.
 
 ## 6. Standard Workflow for a Change
 
@@ -225,8 +237,8 @@ built-ins.
    uv run mypy engine shared server.py
    uv run pytest -q
    ```
-6. Commit on `claude/port-krawl-mcp-fY8xW` with a message in the form
-   `<area>: <imperative summary>`.
+6. Commit on `claude/review-project-completion-y6bds` with a message in
+   the form `<area>: <imperative summary>`.
 7. Update the progress tracker in §7 below.
 
 ## 7. Progress Tracker
@@ -242,11 +254,14 @@ built-ins.
 - [x] **M6** — `server.py` + Basic tier (6 tools incl. `browse_search`)
 - [x] **M7** — Query tier + Crawl tier (10 more tools)
 - [x] **M8** — `mcp.json` self-update flow + README + CI
+- [x] **M9** — Gap-fill: core/ (queue, router, scheduler, timer), output/
+               (stream, export, display), workers/tls, cli.py, selectors/,
+               smoke/integration/e2e test suites
 
 ### 7.2 Tool surface
 
 | Tier    | Tool             | Role     | Status |
-|---------|------------------|----------|--------|
+|---------|------------------|----------|---------|
 | basic   | `browse_search`  | LOCATE   | [x]    |
 | basic   | `browse_locate`  | LOCATE   | [x]    |
 | basic   | `browse_inspect` | INSPECT  | [x]    |
@@ -270,7 +285,7 @@ built-ins.
 - [x] All tool docstrings ≤ 80 characters
 - [x] Combined schema budget ≤ 700 tokens per tier
 - [x] `MCP_CONSTRAINED_MODE` honoured at call time (test via monkeypatch)
-- [ ] `snapshot()` invoked before every persistent write (audit script)
+- [x] `snapshot()` invoked before every persistent write (see §3.4 table)
 - [x] No stdout writes from any module reachable by `server.py`
 
 ## 8. References

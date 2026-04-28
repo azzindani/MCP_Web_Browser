@@ -3,7 +3,16 @@
 Uses `httpx` async with HTTP/2. Bot-wall detection upgrades the result
 to `status="blocked"` so the scheduler can re-route via the browser
 worker. Yahoo Finance chart payloads are auto-parsed to a flat extracted
-dict so the indexer's stock router can pick them up.
+dict so the indexer’s stock router can pick them up.
+
+Block detection (inspired by Scrapling):
+  BLOCKED_STATUS_CODES  — HTTP codes that indicate anti-bot blocking
+  BOT_BODY_PATTERNS     — body substrings that confirm a bot-wall page
+
+HTML extraction (powered by lxml via HtmlExtractor):
+  For HTML responses, title + visible text preview + link list are
+  extracted and stored in `HttpResult.extracted` so the indexer
+  has structured data without requiring a separate tool call.
 """
 
 from __future__ import annotations
@@ -22,12 +31,17 @@ from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
 from engine.resilience.retry import with_retry
 
+# HTTP status codes that signal anti-bot blocking rather than permanent errors.
+# These trigger `status="blocked"` so the caller can retry via browser mode.
+BLOCKED_STATUS_CODES: frozenset[int] = frozenset({401, 403, 407, 429, 503})
+
 _BASE_HEADERS: dict[str, str] = {
     "User-Agent": DEFAULTS.USER_AGENT,
     "Accept": "application/json, text/html, */*",
     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8",
 }
 
+# Chrome-120 fingerprint headers for HTML page fetching.
 _CURL_HEADERS: dict[str, str] = {
     **_BASE_HEADERS,
     "Accept": (
@@ -35,6 +49,7 @@ _CURL_HEADERS: dict[str, str] = {
         "image/avif,image/webp,image/apng,*/*;q=0.8"
     ),
     "Accept-Encoding": "gzip, deflate, br",
+    "Referer": "https://www.google.com/",  # stealthy: appear to come from search
     "sec-ch-ua": (
         '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
     ),
@@ -42,10 +57,11 @@ _CURL_HEADERS: dict[str, str] = {
     "sec-ch-ua-platform": '"Windows"',
     "sec-fetch-dest": "document",
     "sec-fetch-mode": "navigate",
-    "sec-fetch-site": "none",
+    "sec-fetch-site": "cross-site",
     "sec-fetch-user": "?1",
     "Upgrade-Insecure-Requests": "1",
     "Cache-Control": "max-age=0",
+    "DNT": "1",
 }
 
 
@@ -73,10 +89,11 @@ class Task:
 class HttpResult:
     task: Task
     status: str  # "ok" | "error" | "blocked" | "skipped"
-    mode: str  # "http_json" | "http_curl"
+    mode: str    # "http_json" | "http_curl"
     url: str
     title: str = ""
     extracted: dict[str, Any] = field(default_factory=dict)
+    raw_html: str = ""   # populated for HTML responses; used by browse_extract
     links: list[str] = field(default_factory=list)
     elapsed_ms: int = 0
     error: str | None = None
@@ -123,6 +140,27 @@ def _is_botwall(text: str) -> bool:
     return any(p in lower for p in BOT_BODY_PATTERNS)
 
 
+def _parse_html(body: str, url: str) -> tuple[dict[str, Any], str, list[str]]:
+    """Extract title, visible text, and links from an HTML body using lxml."""
+    try:
+        from engine.workers.extractor import HtmlExtractor
+        ex = HtmlExtractor(body, base_url=url)
+        title = ex.get_title()
+        text = ex.get_all_text()
+        links = ex.get_links()
+        return (
+            {
+                "text_preview": text[:2_000],
+                "text_length": len(text),
+                "links_count": len(links),
+            },
+            title,
+            links[:100],
+        )
+    except Exception:
+        return {}, "", []
+
+
 class HttpWorker:
     def __init__(
         self,
@@ -136,7 +174,7 @@ class HttpWorker:
 
     @classmethod
     def make_client(cls, timeout: float = DEFAULTS.HTTP_TIMEOUT) -> httpx.AsyncClient:
-        """Construct a default httpx client. Use as a context manager."""
+        """Construct a default httpx client."""
         return httpx.AsyncClient(
             http2=True,
             follow_redirects=True,
@@ -160,13 +198,12 @@ class HttpWorker:
 
         timeout = DOMAIN_CONFIG.get(domain, {}).get("timeout", DEFAULTS.HTTP_TIMEOUT)
         headers = _CURL_HEADERS if mode == "http_curl" else _BASE_HEADERS
-        referer = f"https://{domain}/"
 
         try:
             response = await with_retry(
                 lambda: self._client.get(
                     task.url,
-                    headers={**headers, "Referer": referer},
+                    headers={**headers, "Referer": f"https://{domain}/"},
                     timeout=timeout,
                 ),
                 max_retries=task.max_retries,
@@ -180,13 +217,25 @@ class HttpWorker:
             )
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+        status_code = response.status_code
 
-        if response.status_code >= 400:
+        # Blocked (anti-bot): retry via browser worker is appropriate
+        if status_code in BLOCKED_STATUS_CODES:
+            self._breaker.failure(domain)
+            return HttpResult(
+                task=task, status="blocked", mode=mode, url=task.url,
+                elapsed_ms=elapsed_ms,
+                error=f"HTTP {status_code} (blocked)",
+                group=task.group, extracted_at=now,
+            )
+
+        # Other 4xx / 5xx = hard error
+        if status_code >= 400:
             self._breaker.failure(domain)
             return HttpResult(
                 task=task, status="error", mode=mode, url=task.url,
                 elapsed_ms=elapsed_ms,
-                error=f"HTTP {response.status_code}",
+                error=f"HTTP {status_code}",
                 group=task.group, extracted_at=now,
             )
 
@@ -203,12 +252,15 @@ class HttpWorker:
 
         self._breaker.success(domain)
 
-        extracted, title = self._classify_payload(body, task)
+        extracted, title, links = self._classify_payload(body, text, task)
+        raw_html = text if isinstance(body, str) else ""
 
         return HttpResult(
             task=task, status="ok", mode=mode, url=task.url,
             title=title,
             extracted=extracted,
+            raw_html=raw_html,
+            links=links,
             elapsed_ms=elapsed_ms,
             group=task.group,
             ticker=task.name if task.group == "Yahoo" else None,
@@ -219,7 +271,7 @@ class HttpWorker:
     def _parse_body(response: httpx.Response) -> tuple[Any, str]:
         text = response.text
         content_type = response.headers.get("content-type", "")
-        if "json" in content_type or text.lstrip().startswith(("{", "[")):
+        if "json" in content_type or text.lstrip().startswith(("{{", "[")):
             try:
                 return response.json(), text
             except ValueError:
@@ -227,11 +279,19 @@ class HttpWorker:
         return text, text
 
     @staticmethod
-    def _classify_payload(body: Any, task: Task) -> tuple[dict[str, Any], str]:
+    def _classify_payload(
+        body: Any, text: str, task: Task
+    ) -> tuple[dict[str, Any], str, list[str]]:
+        # Yahoo Finance JSON
         if isinstance(body, dict) and "chart" in body:
             extracted = _parse_yahoo_chart(body)
             title = str(extracted.get("company") or task.name or "")
-            return extracted, title
+            return extracted, title, []
+        # Other JSON
         if isinstance(body, dict):
-            return body, task.name
-        return {}, task.name
+            return body, task.name, []
+        # HTML body — extract title + visible text + links via lxml
+        if isinstance(body, str) and body.strip():
+            extracted, title, links = _parse_html(body, task.url)
+            return extracted, title or task.name, links
+        return {}, task.name, []
