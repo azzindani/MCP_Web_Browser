@@ -12,7 +12,7 @@ import hashlib
 import os
 import sqlite3
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -24,7 +24,7 @@ def _sha256(s: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _domain_of(url: str) -> str:
@@ -77,9 +77,7 @@ ON CONFLICT(url) DO UPDATE SET
 """
 
 _SQL_DELETE_FTS_PAGE = "DELETE FROM fts_pages WHERE url = ?"
-_SQL_INSERT_FTS_PAGE = (
-    "INSERT INTO fts_pages (url, title, content, source) VALUES (?, ?, ?, ?)"
-)
+_SQL_INSERT_FTS_PAGE = "INSERT INTO fts_pages (url, title, content, source) VALUES (?, ?, ?, ?)"
 
 _SQL_INSERT_STOCK = """
 INSERT INTO stocks
@@ -96,9 +94,7 @@ INSERT OR IGNORE INTO news
 VALUES (?, ?, ?, ?, ?, ?)
 """
 
-_SQL_INSERT_FTS_NEWS = (
-    "INSERT INTO fts_news (headline, source, url, content) VALUES (?, ?, ?, ?)"
-)
+_SQL_INSERT_FTS_NEWS = "INSERT INTO fts_news (headline, source, url, content) VALUES (?, ?, ?, ?)"
 
 _SQL_INSERT_INDEX = """
 INSERT INTO market_indices
@@ -114,8 +110,7 @@ VALUES (?, ?, ?, ?, ?, ?, 'discovered')
 """
 
 _SQL_INSERT_FTS_FILE = (
-    "INSERT INTO fts_files (filename, source_url, ext, content_text) "
-    "VALUES (?, ?, ?, ?)"
+    "INSERT INTO fts_files (filename, source_url, ext, content_text) VALUES (?, ?, ?, ?)"
 )
 
 _SQL_INSERT_LINK = """
@@ -187,15 +182,12 @@ class Indexer:
         with self._conn:
             self._conn.execute(
                 _SQL_LOG_TASK,
-                (run_id, task_id, task_name, url, mode, status,
-                 elapsed_ms, error, _now_iso()),
+                (run_id, task_id, task_name, url, mode, status, elapsed_ms, error, _now_iso()),
             )
 
     # ── private routers ─────────────────────────────────────────────
 
-    def _index_page(
-        self, result: dict[str, Any], run_id: str, report: IndexReport
-    ) -> None:
+    def _index_page(self, result: dict[str, Any], run_id: str, report: IndexReport) -> None:
         url = result.get("url")
         if not isinstance(url, str) or not url:
             return
@@ -210,13 +202,17 @@ class Indexer:
         self._conn.execute(
             _SQL_UPSERT_PAGE,
             (
-                url, domain, title,
+                url,
+                domain,
+                title,
                 result.get("status") or "",
                 result.get("mode") or "",
                 _sha256(content) if content else None,
-                now, now,
+                now,
+                now,
                 int(elapsed) if isinstance(elapsed, (int, float)) else None,
-                source_group, run_id,
+                source_group,
+                run_id,
             ),
         )
         # Refresh FTS row.
@@ -227,9 +223,7 @@ class Indexer:
         )
         report.indexed.append("page")
 
-    def _route_extracted(
-        self, result: dict[str, Any], report: IndexReport
-    ) -> None:
+    def _route_extracted(self, result: dict[str, Any], report: IndexReport) -> None:
         extracted = result.get("extracted") or {}
         if not isinstance(extracted, dict):
             return
@@ -256,9 +250,7 @@ class Indexer:
         )
         if not looks_like_stock:
             return
-        ticker = result.get("ticker") or (
-            (result.get("name") or "").split(" Stock")[0]
-        )
+        ticker = result.get("ticker") or ((result.get("name") or "").split(" Stock")[0])
         if not ticker:
             return
 
@@ -270,7 +262,8 @@ class Indexer:
                 ticker,
                 extracted.get("companyName")
                 or extracted.get("company_name")
-                or result.get("company") or "",
+                or result.get("company")
+                or "",
                 safe_float(extracted.get("price") or result.get("price")),
                 safe_float(extracted.get("change") or extracted.get("change_val")),
                 safe_float(extracted.get("changePct") or extracted.get("change_pct")),
@@ -321,10 +314,7 @@ class Indexer:
         extracted: dict[str, Any],
         report: IndexReport,
     ) -> None:
-        if (
-            result.get("group") != "INVESTING"
-            and result.get("extractType") != "index_price"
-        ):
+        if result.get("group") != "INVESTING" and result.get("extractType") != "index_price":
             return
         if extracted.get("price") is None:
             return
@@ -372,9 +362,7 @@ class Indexer:
                 (f_url, url, filename, ext, _sha256(f_url), now),
             )
             if cur.rowcount:
-                self._conn.execute(
-                    _SQL_INSERT_FTS_FILE, (filename, f_url, ext, "")
-                )
+                self._conn.execute(_SQL_INSERT_FTS_FILE, (filename, f_url, ext, ""))
                 count += 1
         if count:
             report.indexed.append(f"files:{count}")
@@ -407,16 +395,15 @@ class Indexer:
                     url,
                     None,
                     json.dumps(ep.get("response_keys") or []),
-                    now, now,
+                    now,
+                    now,
                 ),
             )
             count += 1
         if count:
             report.indexed.append(f"endpoints:{count}")
 
-    def _index_links(
-        self, result: dict[str, Any], report: IndexReport
-    ) -> None:
+    def _index_links(self, result: dict[str, Any], report: IndexReport) -> None:
         links = result.get("links")
         if not isinstance(links, list) or not links:
             return

@@ -9,8 +9,17 @@ import pytest
 from engine.db.schema import init_schema
 
 EXPECTED_TABLES = {
-    "runs", "task_log", "pages", "stocks", "news", "market_indices",
-    "files", "links", "domains", "endpoints", "selector_store",
+    "runs",
+    "task_log",
+    "pages",
+    "stocks",
+    "news",
+    "market_indices",
+    "files",
+    "links",
+    "domains",
+    "endpoints",
+    "selector_store",
 }
 EXPECTED_FTS = {"fts_pages", "fts_news", "fts_files"}
 
@@ -23,9 +32,7 @@ def conn() -> sqlite3.Connection:
 
 
 def test_all_tables_created(conn: sqlite3.Connection) -> None:
-    rows = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()
+    rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     names = {r[0] for r in rows}
     assert EXPECTED_TABLES.issubset(names)
     assert EXPECTED_FTS.issubset(names)
@@ -44,7 +51,5 @@ def test_init_is_idempotent() -> None:
     c = sqlite3.connect(":memory:")
     init_schema(c)
     init_schema(c)  # must not raise
-    rows = c.execute(
-        "SELECT name FROM sqlite_master WHERE type='table'"
-    ).fetchall()
+    rows = c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
     assert {r[0] for r in rows} >= EXPECTED_TABLES

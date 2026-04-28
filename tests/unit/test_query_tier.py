@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import sqlite3
 from pathlib import Path
 
@@ -14,9 +13,7 @@ from engine.db.schema import init_schema
 
 
 @pytest.fixture()
-def isolated_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def isolated_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     engine.reset_runtime()
     rt = engine.runtime()
@@ -24,7 +21,7 @@ def isolated_engine(
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_schema(conn)
-    rt._db = conn  # noqa: SLF001 — test-only override
+    rt._db = conn
 
     # Seed pages directly via the indexer so FTS content is populated.
     idx = Indexer(conn)
@@ -46,7 +43,7 @@ def isolated_engine(
     )
 
     yield None
-    if rt._db is not None:  # noqa: SLF001
+    if rt._db is not None:
         rt._db.close()
         rt._db = None
     engine.reset_runtime()
@@ -84,9 +81,7 @@ def test_query_select_returns_rows(isolated_engine: None) -> None:
     assert out["total"] >= 1
 
 
-def test_query_export_writes_csv(
-    isolated_engine: None, tmp_path: Path
-) -> None:
+def test_query_export_writes_csv(isolated_engine: None, tmp_path: Path) -> None:
     out_path = "out.csv"
     out = engine.query_export("pages", out_path, fmt="csv")
     assert out["ok"] is True

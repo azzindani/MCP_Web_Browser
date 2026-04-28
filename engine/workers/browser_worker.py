@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -34,7 +34,7 @@ def _domain_of(url: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -68,14 +68,12 @@ def build_stealth_script(p: BrowserProfile) -> str:
 
     Run once per page via `page.add_init_script()` before any site JS.
     """
-    languages = (
-        ["id-ID", "id", "en-US", "en"]
-        if p.locale.startswith("id")
-        else ["en-US", "en"]
-    )
+    languages = ["id-ID", "id", "en-US", "en"] if p.locale.startswith("id") else ["en-US", "en"]
     platform_value = (
-        "Windows" if p.platform.startswith("Win")
-        else "macOS" if p.platform == "MacIntel"
+        "Windows"
+        if p.platform.startswith("Win")
+        else "macOS"
+        if p.platform == "MacIntel"
         else "Linux"
     )
     avail_height = p.screen_height - 40
@@ -360,13 +358,11 @@ class BrowserWorker:
         limiter: RateLimiter,
         *,
         locale: str = DEFAULTS.LOCALE,
-    ) -> "BrowserWorker":
+    ) -> BrowserWorker:
         from playwright.async_api import async_playwright
 
         pw = await async_playwright().start()
-        browser = await pw.chromium.launch(
-            headless=True, args=list(DEFAULTS.CHROMIUM_ARGS)
-        )
+        browser = await pw.chromium.launch(headless=True, args=list(DEFAULTS.CHROMIUM_ARGS))
         return cls(
             playwright=pw,
             browser=browser,
@@ -389,8 +385,12 @@ class BrowserWorker:
 
         if not self._breaker.allow(domain):
             return BrowserResult(
-                task=task, status="blocked", url=task.url, group=task.group,
-                extract_type=task.extract_type, extracted_at=now,
+                task=task,
+                status="blocked",
+                url=task.url,
+                group=task.group,
+                extract_type=task.extract_type,
+                extracted_at=now,
                 error="circuit open",
             )
 
@@ -406,7 +406,9 @@ class BrowserWorker:
         try:
             await with_retry(
                 lambda: page.goto(
-                    task.url, wait_until="domcontentloaded", timeout=timeout * 1000,
+                    task.url,
+                    wait_until="domcontentloaded",
+                    timeout=timeout * 1000,
                 ),
                 max_retries=task.max_retries,
             )
@@ -415,10 +417,14 @@ class BrowserWorker:
                 await context.close()
                 self._breaker.failure(domain)
                 return BrowserResult(
-                    task=task, status="blocked", url=task.url, title=title,
+                    task=task,
+                    status="blocked",
+                    url=task.url,
+                    title=title,
                     elapsed_ms=int((time.monotonic() - t0) * 1000),
                     error="Cloudflare challenge not cleared",
-                    group=task.group, extract_type=task.extract_type,
+                    group=task.group,
+                    extract_type=task.extract_type,
                     extracted_at=now,
                 )
 
@@ -430,28 +436,35 @@ class BrowserWorker:
             self._breaker.success(domain)
 
             return BrowserResult(
-                task=task, status="ok", url=task.url, title=title,
-                extracted=extracted, links=list(links),
+                task=task,
+                status="ok",
+                url=task.url,
+                title=title,
+                extracted=extracted,
+                links=list(links),
                 endpoints=captured,
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
-                group=task.group, extract_type=task.extract_type,
+                group=task.group,
+                extract_type=task.extract_type,
                 extracted_at=now,
             )
-        except Exception as exc:  # noqa: BLE001 — playwright errors vary
+        except Exception as exc:
             try:
                 await context.close()
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: S110
                 pass
             self._breaker.failure(domain)
             msg = str(exc)
             is_timeout = "timeout" in msg.lower()
             return BrowserResult(
-                task=task, status="timeout" if is_timeout else "error",
+                task=task,
+                status="timeout" if is_timeout else "error",
                 url=task.url,
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
                 error=msg[:100],
                 endpoints=captured,
-                group=task.group, extract_type=task.extract_type,
+                group=task.group,
+                extract_type=task.extract_type,
                 extracted_at=now,
             )
 
@@ -468,8 +481,10 @@ class BrowserWorker:
                 "sec-ch-ua": p.sec_ch_ua_full,
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": json.dumps(
-                    "Windows" if p.platform.startswith("Win")
-                    else "macOS" if p.platform == "MacIntel"
+                    "Windows"
+                    if p.platform.startswith("Win")
+                    else "macOS"
+                    if p.platform == "MacIntel"
                     else "Linux"
                 ),
             },
@@ -481,11 +496,14 @@ class BrowserWorker:
             try:
                 body = await response.json()
                 if isinstance(body, dict):
-                    sink.append({
-                        "url": url, "method": "GET",
-                        "response_keys": list(body.keys()),
-                    })
-            except Exception:  # noqa: BLE001
+                    sink.append(
+                        {
+                            "url": url,
+                            "method": "GET",
+                            "response_keys": list(body.keys()),
+                        }
+                    )
+            except Exception:  # noqa: S110
                 pass
 
     async def _dismiss_overlays(self, page: Any) -> None:
@@ -495,7 +513,7 @@ class BrowserWorker:
                 if el:
                     await el.click()
                     await page.wait_for_timeout(300)
-            except Exception:  # noqa: BLE001
+            except Exception:  # noqa: S112
                 continue
 
     async def _extract(self, page: Any, extract_type: str) -> dict[str, Any]:
@@ -506,5 +524,5 @@ class BrowserWorker:
         }.get(extract_type, _EVAL_PREVIEW)
         try:
             return await page.evaluate(eval_js)
-        except Exception:  # noqa: BLE001
+        except Exception:
             return {}

@@ -3,14 +3,15 @@
 `with_retry` wraps an async coroutine. The classifier inspects the
 exception message; only `transient` and `rate_limit` errors are retried.
 Backoff is `BACKOFF_BASE_MS * 2^(attempt-1) + jitter`, capped at
-`BACKOFF_MAX_MS`. Rate-limit errors get a 3× longer base.
+`BACKOFF_MAX_MS`. Rate-limit errors get a 3x longer base.
 """
 
 from __future__ import annotations
 
 import asyncio
 import random
-from typing import Awaitable, Callable, Literal, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import Literal, TypeVar
 
 from engine.config.defaults import DEFAULTS
 
@@ -31,8 +32,13 @@ def classify_error(error: BaseException | str) -> ErrorClass:
     if any(
         s in msg
         for s in (
-            "timeout", "timed out", "econnreset", "enotfound",
-            "network", "socket", "connection",
+            "timeout",
+            "timed out",
+            "econnreset",
+            "enotfound",
+            "network",
+            "socket",
+            "connection",
         )
     ):
         return "transient"
@@ -44,11 +50,7 @@ def should_retry(cls: ErrorClass) -> bool:
 
 
 def backoff_ms(attempt: int, cls: ErrorClass, *, rng: random.Random | None = None) -> float:
-    base = (
-        DEFAULTS.BACKOFF_BASE_MS * 3
-        if cls == "rate_limit"
-        else DEFAULTS.BACKOFF_BASE_MS
-    )
+    base = DEFAULTS.BACKOFF_BASE_MS * 3 if cls == "rate_limit" else DEFAULTS.BACKOFF_BASE_MS
     exp = base * (2 ** (attempt - 1))
     r = rng if rng is not None else random
     jitter = r.random() * base * 0.3
@@ -67,7 +69,7 @@ async def with_retry(
     for attempt in range(1, max_retries + 1):
         try:
             return await fn()
-        except BaseException as exc:  # noqa: BLE001 — caller decides
+        except BaseException as exc:
             last_error = exc
             cls = classify_error(exc)
             if not should_retry(cls) or attempt == max_retries:

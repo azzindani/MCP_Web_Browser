@@ -130,13 +130,14 @@ if _enabled("MCP_TIER_CRAWL", "0"):
     ) -> dict[str, Any]:
         """Bounded crawl. Indexes pages, returns receipt."""
         return await engine.crawl_run(
-            url, max_pages=max_pages, max_depth=max_depth, run_id=run_id,
+            url,
+            max_pages=max_pages,
+            max_depth=max_depth,
+            run_id=run_id,
         )
 
     @app.tool()
-    async def crawl_resume(
-        run_id: str, url: str, max_pages: int | None = None
-    ) -> dict[str, Any]:
+    async def crawl_resume(run_id: str, url: str, max_pages: int | None = None) -> dict[str, Any]:
         """Resume a crawl run from its checkpoint."""
         return await engine.crawl_resume(run_id, url, max_pages=max_pages)
 

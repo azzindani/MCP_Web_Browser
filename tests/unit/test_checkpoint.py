@@ -19,9 +19,7 @@ def test_fresh_checkpoint_when_file_missing(
     assert cp.done_urls() == set()
 
 
-def test_save_and_reload_round_trip(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_save_and_reload_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     cp = Checkpoint("ckpt.json", run_id="r-2")
     cp.save({"https://a.example/", "https://b.example/"}, total_count=2)
@@ -34,9 +32,7 @@ def test_save_and_reload_round_trip(
     assert cp2.done_urls() == {"https://a.example/", "https://b.example/"}
 
 
-def test_corrupt_file_starts_fresh(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_corrupt_file_starts_fresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     (tmp_path / "ckpt.json").write_text("{not json")
     cp = Checkpoint("ckpt.json", run_id="r-3")
@@ -44,9 +40,7 @@ def test_corrupt_file_starts_fresh(
     assert cp.run_id() == "r-3"
 
 
-def test_clear_removes_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_clear_removes_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     cp = Checkpoint("ckpt.json", run_id="r-4")
     cp.save({"https://x.example/"}, total_count=1)
@@ -56,9 +50,7 @@ def test_clear_removes_file(
     assert cp.done_urls() == set()
 
 
-def test_save_is_atomic_no_tmp_leftover(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_save_is_atomic_no_tmp_leftover(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     cp = Checkpoint("ckpt.json", run_id="r-5")
     cp.save({"https://a"}, 1)

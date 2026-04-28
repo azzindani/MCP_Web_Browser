@@ -119,15 +119,11 @@ async def test_max_pages_cap_is_respected() -> None:
     pages: dict[str, tuple[str, str]] = {
         "https://example.com/p/0.html": (
             "text/html",
-            "".join(
-                f'<a href="/p/{i}.html">{i}</a>' for i in range(1, 20)
-            ) + "<title>0</title>",
+            "".join(f'<a href="/p/{i}.html">{i}</a>' for i in range(1, 20)) + "<title>0</title>",
         ),
     }
     for i in range(1, 20):
-        pages[f"https://example.com/p/{i}.html"] = (
-            "text/html", f"<title>{i}</title>"
-        )
+        pages[f"https://example.com/p/{i}.html"] = ("text/html", f"<title>{i}</title>")
 
     worker = _make_worker(_site_handler(pages))
     report = await worker.run(
@@ -141,9 +137,7 @@ async def test_max_pages_cap_is_respected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_skips_done_urls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_resume_skips_done_urls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     pages = {
         "https://example.com/r/index.html": (

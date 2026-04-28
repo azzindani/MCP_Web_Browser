@@ -18,12 +18,14 @@ dependencies = [
   "markdownify>=0.13",   # HTML→Markdown for clean content extraction
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "pytest>=8",
   "pytest-asyncio>=0.23",
   "ruff>=0.5",
-  "mypy>=1.10",
+  "pyright>=1.1",
+  "lxml>=4.9",
+  "cssselect>=1.2",
 ]
 
 [build-system]
@@ -45,11 +47,11 @@ ignore = ["E501", "S101"]  # E501: covered by formatter; S101: pytest uses asser
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S", "B"]
 
-[tool.mypy]
-python_version         = "3.11"
-strict                 = true
-ignore_missing_imports = true
-files                  = ["engine", "shared", "server.py"]
+[tool.pyright]
+pythonVersion          = "3.11"
+pythonPlatform         = "All"
+typeCheckingMode       = "basic"
+reportMissingImports   = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

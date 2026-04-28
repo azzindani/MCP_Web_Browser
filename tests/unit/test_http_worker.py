@@ -67,8 +67,11 @@ async def test_fetch_yahoo_chart_extracts_price() -> None:
     )
     worker = _make_worker(_fixed_handler(body))
     result = await worker.fetch_one(
-        Task(url="https://query1.finance.yahoo.com/v8/finance/chart/BBCA.JK",
-             name="BBCA.JK", group="Yahoo")
+        Task(
+            url="https://query1.finance.yahoo.com/v8/finance/chart/BBCA.JK",
+            name="BBCA.JK",
+            group="Yahoo",
+        )
     )
     assert result.status == "ok"
     assert result.extracted["price"] == 9500.0
@@ -100,7 +103,7 @@ async def test_circuit_open_skips_fetch() -> None:
     worker = _make_worker(_fixed_handler('{"k":1}'))
     # Force the breaker into the open state for this domain.
     for _ in range(5):
-        worker._breaker.failure("open.example")  # noqa: SLF001 (test-only)
+        worker._breaker.failure("open.example")
     result = await worker.fetch_one(Task(url="https://open.example/x", name="x"))
     assert result.status == "skipped"
     assert result.error == "circuit open"

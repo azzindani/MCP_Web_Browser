@@ -31,9 +31,7 @@ def snapshot(path: str | os.PathLike[str]) -> Path | None:
 def atomic_write_bytes(path: str | os.PathLike[str], data: bytes) -> Path:
     target = resolve_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
     tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as f:

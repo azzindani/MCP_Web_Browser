@@ -5,6 +5,7 @@ Exercises the full MCP tool flow through engine entry-points:
 
 Marker: e2e.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -16,8 +17,8 @@ import pytest
 import engine
 from engine.db.schema import init_schema
 
-
 # ── fixtures ───────────────────────────────────────────────────
+
 
 @pytest.fixture(autouse=True)
 def _reset() -> Any:
@@ -41,6 +42,7 @@ def _inject_db(mem_db: sqlite3.Connection) -> engine._Runtime:
 
 
 # ── browse_search ────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_browse_search_returns_hits() -> None:
@@ -91,6 +93,7 @@ async def test_browse_search_no_results() -> None:
 
 
 # ── browse_fetch → browse_verify ──────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_browse_fetch_indexes_and_verify(
@@ -158,6 +161,7 @@ async def test_browse_fetch_error_not_indexed(
 
 # ── query tier ───────────────────────────────────────────────
 
+
 def test_query_locate_lists_tables(mem_db: sqlite3.Connection) -> None:
     _inject_db(mem_db)
     result = engine.query_locate()
@@ -193,6 +197,7 @@ def test_query_search_bad_table(mem_db: sqlite3.Connection) -> None:
 
 # ── engine_status ─────────────────────────────────────────────
 
+
 def test_engine_status_ok() -> None:
     result = engine.engine_status()
     assert result["ok"] is True
@@ -201,6 +206,7 @@ def test_engine_status_ok() -> None:
 
 
 # ── no stdout from engine ─────────────────────────────────────
+
 
 def test_engine_status_no_stdout(capsys: Any) -> None:
     engine.engine_status()

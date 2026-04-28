@@ -12,6 +12,7 @@ Error responses must additionally have:
 
 Success responses should have "suggested_next" where next steps exist.
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -64,12 +65,17 @@ def _assert_protocol(res: dict, op: str, expect_ok: bool) -> None:
 
 # ── browse tier ──────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_browse_search_success_protocol() -> None:
     mock_hit = MagicMock(title="T", url="https://x.com", snippet="s", backend="ddg")
     mock_result = MagicMock(
-        backend="ddg", query="q", hits=[mock_hit],
-        total=1, truncated=False, elapsed_ms=50,
+        backend="ddg",
+        query="q",
+        hits=[mock_hit],
+        total=1,
+        truncated=False,
+        elapsed_ms=50,
     )
     with patch.object(engine._Runtime, "search_worker") as f:
         sw = MagicMock()
@@ -84,8 +90,12 @@ async def test_browse_search_success_protocol() -> None:
 @pytest.mark.asyncio
 async def test_browse_search_failure_protocol() -> None:
     mock_result = MagicMock(
-        backend="none", query="q", hits=[],
-        total=0, truncated=False, elapsed_ms=50,
+        backend="none",
+        query="q",
+        hits=[],
+        total=0,
+        truncated=False,
+        elapsed_ms=50,
     )
     with patch.object(engine._Runtime, "search_worker") as f:
         sw = MagicMock()
@@ -99,10 +109,16 @@ async def test_browse_search_failure_protocol() -> None:
 async def test_browse_fetch_success_protocol(mem_db: sqlite3.Connection) -> None:
     _inject(mem_db)
     mock_fetch = MagicMock(
-        status="ok", url="https://x.com", title="X",
-        mode="http_curl", elapsed_ms=100,
-        extracted={"text_preview": "hello"}, group="",
-        ticker=None, extracted_at="2025-01-01T00:00:00+00:00", error=None,
+        status="ok",
+        url="https://x.com",
+        title="X",
+        mode="http_curl",
+        elapsed_ms=100,
+        extracted={"text_preview": "hello"},
+        group="",
+        ticker=None,
+        extracted_at="2025-01-01T00:00:00+00:00",
+        error=None,
     )
     with patch.object(engine._Runtime, "http_worker") as f:
         hw = MagicMock()
@@ -118,10 +134,16 @@ async def test_browse_fetch_success_protocol(mem_db: sqlite3.Connection) -> None
 async def test_browse_fetch_failure_protocol(mem_db: sqlite3.Connection) -> None:
     _inject(mem_db)
     mock_fetch = MagicMock(
-        status="error", url="https://x.com", title="",
-        mode="http_curl", elapsed_ms=50,
-        extracted={}, group="", ticker=None,
-        extracted_at="2025-01-01T00:00:00+00:00", error="HTTP 503",
+        status="error",
+        url="https://x.com",
+        title="",
+        mode="http_curl",
+        elapsed_ms=50,
+        extracted={},
+        group="",
+        ticker=None,
+        extracted_at="2025-01-01T00:00:00+00:00",
+        error="HTTP 503",
     )
     with patch.object(engine._Runtime, "http_worker") as f:
         hw = MagicMock()
@@ -134,9 +156,13 @@ async def test_browse_fetch_failure_protocol(mem_db: sqlite3.Connection) -> None
 @pytest.mark.asyncio
 async def test_browse_inspect_success_protocol() -> None:
     mock_fetch = MagicMock(
-        status="ok", url="https://x.com", title="X",
-        mode="http_curl", elapsed_ms=80,
-        extracted={"text_preview": "preview text"}, error=None,
+        status="ok",
+        url="https://x.com",
+        title="X",
+        mode="http_curl",
+        elapsed_ms=80,
+        extracted={"text_preview": "preview text"},
+        error=None,
     )
     with patch.object(engine._Runtime, "http_worker") as f:
         hw = MagicMock()
@@ -170,6 +196,7 @@ def test_engine_status_protocol() -> None:
 
 
 # ── query tier ───────────────────────────────────────────────────────────────
+
 
 def test_query_locate_protocol(mem_db: sqlite3.Connection) -> None:
     _inject(mem_db)
@@ -220,6 +247,7 @@ def test_query_export_bad_table_protocol(mem_db: sqlite3.Connection) -> None:
 
 
 # ── crawl tier ──────────────────────────────────────────────────────────────
+
 
 def test_crawl_verify_not_found_protocol(mem_db: sqlite3.Connection) -> None:
     _inject(mem_db)

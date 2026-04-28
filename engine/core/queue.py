@@ -4,18 +4,19 @@ Mirrors core/queue.ts in krawl. Tasks with equal priority are FIFO
 (insertion-order tie-breaking via a monotone sequence counter).
 heapq gives O(log n) enqueue / dequeue.
 """
+
 from __future__ import annotations
 
 import heapq
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _new_id() -> str:
@@ -27,13 +28,13 @@ class Task:
     id: str
     name: str
     url: str
-    mode: str           # auto | http_json | http_curl | browser | crawl | blocked
-    priority: int       # 1 = highest
+    mode: str  # auto | http_json | http_curl | browser | crawl | blocked
+    priority: int  # 1 = highest
     group: str
     tags: list[str]
     retries: int
     max_retries: int
-    status: str         # pending | running | done | failed | skipped | dead_letter
+    status: str  # pending | running | done | failed | skipped | dead_letter
     crawl_depth: int | None = None
     collect_files: list[str] | None = None
     extract_type: str | None = None
@@ -92,8 +93,8 @@ class TaskQueue:
     def __init__(self) -> None:
         self._heap: list[tuple[int, int, Task]] = []
         self._seq: int = 0
-        self._running: dict[str, Task] = {}   # id → task
-        self._done: dict[str, Task] = {}      # url → task
+        self._running: dict[str, Task] = {}  # id → task
+        self._done: dict[str, Task] = {}  # url → task
         self._dead: list[Task] = []
         self._pending_urls: set[str] = set()
 
@@ -212,10 +213,10 @@ class TaskQueue:
 
     def snapshot(self) -> dict[str, Any]:
         return {
-            "pending"  : self.pending_count,
-            "running"  : self.running_count,
-            "done"     : self.done_count,
-            "dead"     : self.dead_count,
+            "pending": self.pending_count,
+            "running": self.running_count,
+            "done": self.done_count,
+            "dead": self.dead_count,
             "done_urls": sorted(self._done.keys()),
         }
 

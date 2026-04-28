@@ -25,7 +25,10 @@ def _make_worker(
     breaker = CircuitBreaker()
     limiter = RateLimiter(sleep_fn=_no_sleep)
     return SearchWorker(
-        client=client, breaker=breaker, limiter=limiter, searxng_url=searxng_url,
+        client=client,
+        breaker=breaker,
+        limiter=limiter,
+        searxng_url=searxng_url,
     )
 
 

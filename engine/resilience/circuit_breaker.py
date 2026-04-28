@@ -9,8 +9,9 @@ Time source is injectable via `now_fn` so tests don't need `time.sleep`.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Literal
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
 
 from engine.config.defaults import DEFAULTS
 

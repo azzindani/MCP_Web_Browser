@@ -4,6 +4,7 @@ Mirrors core/timer.ts in krawl. All display goes to stderr so MCP
 stdio framing is never corrupted. display() writes a single overwrite
 line; summary() prints the full end-of-run report.
 """
+
 from __future__ import annotations
 
 import sys
@@ -102,9 +103,7 @@ class Timer:
         pct = completed / total if total > 0 else 0
         filled = min(30, max(0, round(pct * 30)))
         bar = "█" * filled + "░" * (30 - filled)
-        mode_s = "  ".join(
-            f"{m}✓{s['ok']}✗{s['err']}" for m, s in self._stats.by_mode.items()
-        )
+        mode_s = "  ".join(f"{m}✓{s['ok']}✗{s['err']}" for m, s in self._stats.by_mode.items())
         line = (
             f"[{_fmt_ms(wall_ms)}] {bar} {round(pct * 100)}%"
             f"  {completed}/{total}"
@@ -132,20 +131,15 @@ class Timer:
         for mode, s in self._stats.by_mode.items():
             n = s["ok"] + s["err"]
             avg = s["total_ms"] / n if n else 0
-            _stderr(f"  {mode:<14} ok={s['ok']}  err={s['err']}  avg={avg/1000:.2f}s")
+            _stderr(f"  {mode:<14} ok={s['ok']}  err={s['err']}  avg={avg / 1000:.2f}s")
         _stderr("\nTop domains:")
-        for domain, s in sorted(
-            self._stats.by_domain.items(), key=lambda kv: -kv[1]["count"]
-        )[:8]:
+        for domain, s in sorted(self._stats.by_domain.items(), key=lambda kv: -kv[1]["count"])[:8]:
             avg = s["total_ms"] / s["count"]
-            _stderr(f"  {domain:<35} {s['count']} reqs  avg={avg/1000:.2f}s")
+            _stderr(f"  {domain:<35} {s['count']} reqs  avg={avg / 1000:.2f}s")
         _stderr("\nPhases:")
         for p in self._stats.phases.values():
             dur = (p.end_ms or time.monotonic() * 1000) - p.start_ms
-            _stderr(
-                f"  {p.name:<20} {p.completed}/{p.total}"
-                f"  {_fmt_ms(dur)}  err={p.errors}"
-            )
+            _stderr(f"  {p.name:<20} {p.completed}/{p.total}  {_fmt_ms(dur)}  err={p.errors}")
 
     def get_stats(self) -> RunStats:
         return self._stats

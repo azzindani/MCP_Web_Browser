@@ -14,7 +14,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html import unescape
 from typing import Final
 from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
@@ -27,9 +27,7 @@ from engine.resilience.rate_limiter import RateLimiter
 from engine.resilience.retry import with_retry
 from shared.platform_utils import get_max_results
 
-_SEARXNG_URL: Final[str] = os.environ.get(
-    "MCP_SEARCH_BACKEND", "http://127.0.0.1:8888"
-)
+_SEARXNG_URL: Final[str] = os.environ.get("MCP_SEARCH_BACKEND", "http://127.0.0.1:8888")
 _DDG_URL: Final[str] = "https://html.duckduckgo.com/html/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
@@ -54,7 +52,7 @@ class SearchResult:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _domain_of(url: str) -> str:
@@ -150,9 +148,7 @@ class SearchWorker:
         self._limiter = limiter
         self._searxng_url = searxng_url.rstrip("/")
 
-    async def search(
-        self, query: str, limit: int | None = None
-    ) -> SearchResult:
+    async def search(self, query: str, limit: int | None = None) -> SearchResult:
         cap = limit if limit is not None else get_max_results()
         t0 = time.monotonic()
         for backend in ("searxng", "ddg", "brave"):
@@ -168,14 +164,16 @@ class SearchWorker:
                     fetched_at=_now_iso(),
                 )
         return SearchResult(
-            query=query, hits=[], backend="none",
+            query=query,
+            hits=[],
+            backend="none",
             elapsed_ms=int((time.monotonic() - t0) * 1000),
-            truncated=False, total=0, fetched_at=_now_iso(),
+            truncated=False,
+            total=0,
+            fetched_at=_now_iso(),
         )
 
-    async def _try_backend(
-        self, backend: str, query: str, cap: int
-    ) -> list[SearchHit]:
+    async def _try_backend(self, backend: str, query: str, cap: int) -> list[SearchHit]:
         try:
             if backend == "searxng":
                 return await self._searxng(query, cap)
