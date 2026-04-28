@@ -61,6 +61,19 @@ if _enabled("MCP_TIER_BASIC", "1"):
         """Engine health: pools, breaker, db."""
         return engine.engine_status()
 
+    @app.tool()
+    async def browse_extract(
+        url: str,
+        selector: str,
+        mode: str = "css",
+        output_type: str = "text",
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Extract elements by CSS/XPath/text/regex selector."""
+        return await engine.extract_from_url(
+            url, selector, mode=mode, output_type=output_type, limit=limit
+        )
+
 
 # ── Query tier ─────────────────────────────────────────────────────
 

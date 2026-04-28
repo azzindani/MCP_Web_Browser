@@ -143,7 +143,7 @@ class TaskQueue:
             return
         task.error = error
         task.retries += 1
-        if task.retries >= task.max_retries:
+        if task.retries > task.max_retries:
             task.status = "dead_letter"
             self._dead.append(task)
         else:
