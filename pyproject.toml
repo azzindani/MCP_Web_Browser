@@ -7,13 +7,15 @@ requires-python = ">=3.11"
 license         = { text = "MIT" }
 authors         = [{ name = "Afza Azzindani" }]
 
-# Runtime deps. Cap = 7 per STANDARDS §35. Currently 5.
+# Runtime deps. Cap = 7 per STANDARDS §35. Currently 7.
 dependencies = [
   "mcp>=1.0",
   "httpx[http2]>=0.27",
   "playwright>=1.45",
   "pydantic>=2.7",
   "pypdf>=4.0",
+  "curl_cffi>=0.7",      # TLS fingerprint impersonation (Scrapling-inspired)
+  "markdownify>=0.13",   # HTML→Markdown for clean content extraction
 ]
 
 [project.optional-dependencies]

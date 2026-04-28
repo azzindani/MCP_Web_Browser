@@ -1,9 +1,9 @@
 """HTTP worker — handles `http_json` and `http_curl` modes.
 
-Uses `httpx` async with HTTP/2. Bot-wall detection upgrades the result
-to `status="blocked"` so the scheduler can re-route via the browser
-worker. Yahoo Finance chart payloads are auto-parsed to a flat extracted
-dict so the indexer’s stock router can pick them up.
+`http_json`: plain httpx async with HTTP/2 — for JSON APIs.
+`http_curl`: curl_cffi with impersonate="chrome120" — TLS fingerprint
+  impersonation so the TLS handshake looks like a real Chrome browser.
+  Falls back to httpx if curl_cffi is not installed.
 
 Block detection (inspired by Scrapling):
   BLOCKED_STATUS_CODES  — HTTP codes that indicate anti-bot blocking
@@ -25,11 +25,19 @@ from urllib.parse import urlparse
 
 import httpx
 
+try:
+    from curl_cffi.requests import AsyncSession as CurlSession
+    _CURL_CFFI = True
+except ImportError:  # pragma: no cover
+    _CURL_CFFI = False
+
 from engine.config.defaults import BOT_BODY_PATTERNS, DEFAULTS
 from engine.config.domains import DOMAIN_CONFIG
 from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
 from engine.resilience.retry import with_retry
+
+_CURL_IMPERSONATE = "chrome120"
 
 # HTTP status codes that signal anti-bot blocking rather than permanent errors.
 # These trigger `status="blocked"` so the caller can retry via browser mode.
@@ -182,6 +190,18 @@ class HttpWorker:
             headers=_BASE_HEADERS,
         )
 
+    async def _stealth_get(self, url: str, domain: str, timeout: float) -> tuple[int, str, str]:
+        """Fetch with curl_cffi Chrome TLS impersonation; returns (status, text, content_type)."""
+        async with CurlSession(impersonate=_CURL_IMPERSONATE) as session:
+            resp = await session.get(
+                url,
+                headers={**_CURL_HEADERS, "Referer": f"https://{domain}/"},
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            ct = resp.headers.get("content-type", "")
+            return resp.status_code, resp.text, ct
+
     async def fetch_one(self, task: Task) -> HttpResult:
         domain = _domain_of(task.url)
         mode = "http_curl" if task.mode == "http_curl" else "http_json"
@@ -197,8 +217,66 @@ class HttpWorker:
         await self._limiter.acquire(domain)
 
         timeout = DOMAIN_CONFIG.get(domain, {}).get("timeout", DEFAULTS.HTTP_TIMEOUT)
-        headers = _CURL_HEADERS if mode == "http_curl" else _BASE_HEADERS
 
+        # http_curl mode: prefer curl_cffi TLS impersonation (Scrapling-style)
+        if mode == "http_curl" and _CURL_CFFI:
+            try:
+                status_code, text, ct = await with_retry(
+                    lambda: self._stealth_get(task.url, domain, timeout),
+                    max_retries=task.max_retries,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self._breaker.failure(domain)
+                return HttpResult(
+                    task=task, status="error", mode=mode, url=task.url,
+                    elapsed_ms=int((time.monotonic() - t0) * 1000),
+                    error=str(exc)[:100], group=task.group, extracted_at=now,
+                )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            if status_code in BLOCKED_STATUS_CODES:
+                self._breaker.failure(domain)
+                return HttpResult(
+                    task=task, status="blocked", mode=mode, url=task.url,
+                    elapsed_ms=elapsed_ms,
+                    error=f"HTTP {status_code} (blocked)",
+                    group=task.group, extracted_at=now,
+                )
+            if status_code >= 400:
+                self._breaker.failure(domain)
+                return HttpResult(
+                    task=task, status="error", mode=mode, url=task.url,
+                    elapsed_ms=elapsed_ms, error=f"HTTP {status_code}",
+                    group=task.group, extracted_at=now,
+                )
+            if _is_botwall(text):
+                self._breaker.failure(domain)
+                return HttpResult(
+                    task=task, status="blocked", mode=mode, url=task.url,
+                    elapsed_ms=elapsed_ms,
+                    error="bot-wall detected in response body",
+                    group=task.group, extracted_at=now,
+                )
+            self._breaker.success(domain)
+            body: Any = text
+            if "json" in ct or text.lstrip().startswith(("{", "[")):
+                try:
+                    import json as _json
+                    body = _json.loads(text)
+                except ValueError:
+                    pass
+            extracted, title, links = self._classify_payload(body, text, task)
+            return HttpResult(
+                task=task, status="ok", mode=mode, url=task.url,
+                title=title, extracted=extracted,
+                raw_html=text if isinstance(body, str) else "",
+                links=links, elapsed_ms=elapsed_ms,
+                group=task.group,
+                ticker=task.name if task.group == "Yahoo" else None,
+                extracted_at=now,
+            )
+
+        # Fallback: plain httpx (http_json or curl_cffi unavailable)
+        headers = _CURL_HEADERS if mode == "http_curl" else _BASE_HEADERS
         try:
             response = await with_retry(
                 lambda: self._client.get(

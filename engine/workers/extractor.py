@@ -1,13 +1,17 @@
-"""HTML content extractor — CSS selector, XPath, text, and regex search.
+"""HTML content extractor — CSS selector, XPath, text, regex, and Markdown.
 
 Powered by lxml + cssselect. Zero network calls; operates on raw HTML string.
-Inspired by Scrapling’s parser architecture: same selection modes, same output
-shapes, adapted to the MCP web browser response protocol.
+
+Scrapling features ported here:
+  to_markdown()  — convert HTML body to clean Markdown via markdownify
+  find_similar() — adaptive element matching: score candidates by text/
+                   attrs/position similarity and return those above threshold
 """
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Any
 
 try:
@@ -15,6 +19,12 @@ try:
     _LXML = True
 except ImportError:  # pragma: no cover
     _LXML = False
+
+try:
+    from markdownify import markdownify as _md
+    _MARKDOWNIFY = True
+except ImportError:  # pragma: no cover
+    _MARKDOWNIFY = False
 
 _SKIP_TAGS: frozenset[str] = frozenset(
     {"script", "style", "meta", "link", "noscript", "head", "template"}
@@ -250,3 +260,85 @@ class HtmlExtractor:
             if name and content:
                 meta[name] = content
         return meta
+
+    def to_markdown(
+        self,
+        strip: list[str] | None = None,
+        convert: list[str] | None = None,
+    ) -> str:
+        """Convert the HTML body to Markdown (requires markdownify).
+
+        strip   — tag names whose content is dropped entirely (default: script, style)
+        convert — tag names to convert; None means convert everything
+        """
+        if not _MARKDOWNIFY:
+            return self.get_all_text()
+        html_str = lxml_html.tostring(self._doc, encoding="unicode", method="html")
+        _strip = strip if strip is not None else ["script", "style", "head", "noscript"]
+        kwargs: dict[str, Any] = {"strip": _strip, "heading_style": "ATX"}
+        if convert is not None:
+            kwargs["convert"] = convert
+        md: str = _md(html_str, **kwargs)
+        lines = [ln.rstrip() for ln in md.splitlines()]
+        cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+        return cleaned
+
+    def find_similar(
+        self,
+        text: str = "",
+        tag: str = "",
+        attrs: dict[str, str] | None = None,
+        threshold: float = 0.6,
+        limit: int = 10,
+        output_type: str = "all",
+    ) -> ExtractionResult:
+        """Adaptive element matching (Scrapling-inspired).
+
+        Scores every element against the provided hints and returns those
+        whose combined similarity exceeds `threshold` (0–1).
+
+        Scoring breakdown (each component 0–1, equally weighted):
+          text_sim   — SequenceMatcher ratio of element visible text vs `text`
+          tag_sim    — 1 if tag matches, 0 otherwise (skipped if tag=="")
+          attr_sim   — fraction of provided attrs that match element attrs
+        """
+        scores: list[tuple[float, Any]] = []
+        want_attrs = attrs or {}
+
+        for el in self._doc.iter():
+            if not isinstance(el.tag, str) or el.tag in _SKIP_TAGS:
+                continue
+
+            components: list[float] = []
+
+            if text:
+                el_text = " ".join(el.itertext()).strip()
+                components.append(
+                    SequenceMatcher(None, text.lower(), el_text.lower()).ratio()
+                )
+
+            if tag:
+                components.append(1.0 if el.tag.lower() == tag.lower() else 0.0)
+
+            if want_attrs:
+                el_attrs = dict(el.attrib) if el.attrib is not None else {}
+                matched_attrs = sum(
+                    1 for k, v in want_attrs.items()
+                    if v.lower() in (el_attrs.get(k) or "").lower()
+                )
+                components.append(matched_attrs / len(want_attrs))
+
+            if not components:
+                continue
+            score = sum(components) / len(components)
+            if score >= threshold:
+                scores.append((score, el))
+
+        scores.sort(key=lambda x: x[0], reverse=True)
+        top = [el for _, el in scores[:limit]]
+        return ExtractionResult(
+            ok=True, selector=f"similar(text={text!r},tag={tag!r})",
+            mode="similar", output_type=output_type,
+            matches=[_el_dict(el, output_type) for el in top],
+            count=len(scores), truncated=len(scores) > limit,
+        )

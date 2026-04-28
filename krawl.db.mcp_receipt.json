@@ -1,0 +1,20 @@
+[
+  {
+    "ts": "2026-04-28T00:41:46Z",
+    "op": "browse_fetch",
+    "args": {
+      "url": "https://example.com/page",
+      "run_id": "mcp"
+    },
+    "result": "indexed 1 tables: ['page']"
+  },
+  {
+    "ts": "2026-04-28T00:41:46Z",
+    "op": "browse_fetch",
+    "args": {
+      "url": "https://x.com",
+      "run_id": "mcp"
+    },
+    "result": "indexed 1 tables: ['page']"
+  }
+]
