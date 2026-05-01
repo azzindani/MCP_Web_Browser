@@ -167,7 +167,11 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
     }
     if not success:
         res["backend_errors"] = result.errors
-        res["hint"] = "Set MCP_SEARCH_BACKEND to a SearXNG URL; call browse_status() to check health."
+        res["do_not_retry"] = True
+        res["hint"] = (
+            "All search backends failed. STOP — do not call browse_search again. "
+            "Either answer from your training data or call browse_status to diagnose."
+        )
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
         res["suggested_next"] = [

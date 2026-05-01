@@ -172,7 +172,10 @@ async def _curl_search_get(url: str, params: dict[str, str], headers: dict[str, 
 
     def _sync() -> tuple[int, str]:
         with CurlSyncSession(impersonate=_CURL_IMPERSONATE) as session:
-            resp = session.get(url, params=params, headers=headers, timeout=_SEARCH_TIMEOUT, allow_redirects=True)
+            # verify=False: curl_cffi's bundled CA certs miss some search CDN certs
+            resp = session.get(
+                url, params=params, headers=headers, timeout=_SEARCH_TIMEOUT, allow_redirects=True, verify=False
+            )
             return resp.status_code, resp.text
 
     return await asyncio.to_thread(_sync)
