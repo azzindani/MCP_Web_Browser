@@ -29,9 +29,6 @@ Domain: web ingestion, SPA scraping, domain crawls, full-text search.
 Target: 8 GB GPU running a 9B parameter model, no cloud, no API keys.
 ```
 
-The full migration plan is in `PORT_PLAN.md`. Read it before designing
-new modules.
-
 ## 2. Repository Structure
 
 ```
@@ -42,7 +39,6 @@ mcp_web_browser/
 ├── pyproject.toml
 ├── README.md
 ├── CLAUDE.md                  ← you are here
-├── PORT_PLAN.md
 │
 ├── engine/                    ← pure Python. ZERO MCP imports.
 │   ├── cli.py       optional standalone CLI (no MCP)
@@ -169,7 +165,7 @@ in the public surface. Compose two existing tools instead.
 
 | Tier (env-toggled)              | Tools | Default |
 |---------------------------------|-------|---------|
-| `mcp_web_browser_basic`         | 6     | on      |
+| `mcp_web_browser_basic`         | 7     | on      |
 | `mcp_web_browser_query`         | 5     | on      |
 | `mcp_web_browser_crawl`         | 5     | off     |
 
@@ -219,19 +215,16 @@ built-ins.
   Always use the chunked write protocol from §3.5 (Write a small
   header, then Edit/append one section at a time).
 - Never rebase, force-push, or amend on shared branches.
-- Never push to `main`. Development happens on
-  `claude/review-project-completion-y6bds`.
 
 ## 6. Standard Workflow for a Change
 
-1. Read `PORT_PLAN.md` § matching the milestone you are working on.
-2. Plan the change: which tier, which role (LOCATE/INSPECT/PATCH/VERIFY),
+1. Plan the change: which tier, which role (LOCATE/INSPECT/PATCH/VERIFY),
    which engine module.
-3. Implement engine logic first under `engine/**`. Add unit tests that
+2. Implement engine logic first under `engine/**`. Add unit tests that
    import nothing from `mcp.*`.
-4. Wire the tool one-liner in `server.py`. Add a smoke test that
+3. Wire the tool one-liner in `server.py`. Add a smoke test that
    round-trips a Pydantic-validated call.
-5. Run in order — all three must pass before committing:
+4. Run in order — all must pass before committing:
 
    **Format:**
    ```
@@ -253,8 +246,8 @@ built-ins.
    uv run pytest tests/ -q --tb=short
    ```
 
-6. Commit with a message in the form `<area>: <imperative summary>`.
-7. Update the progress tracker in §7 below.
+5. Commit with a message in the form `<area>: <imperative summary>`.
+6. Update the progress tracker in §7 below.
 
 ## 7. Progress Tracker
 
@@ -306,7 +299,6 @@ built-ins.
 
 ## 8. References
 
-- Migration plan: `PORT_PLAN.md`
 - Source engine: <https://github.com/azzindani/krawl>
 - Krawl architecture: `docs/ARCHITECTURE.md` in the krawl repo
 - Governing standard:
