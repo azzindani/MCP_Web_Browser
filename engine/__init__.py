@@ -213,13 +213,19 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        # Browser fallback: Chromium is pre-warmed at startup, so this is fast.
+        # Browser fallback: launch Chromium now if not already running.
+        # Safe to do here — the MCP handshake is complete, so stdio won't be corrupted.
         _BROWSER_SEARCH_TIMEOUT = 20.0  # per-engine hard cap
+        _BROWSER_LAUNCH_TIMEOUT = 30.0
         cap = get_max_results() if limit is None else limit
         browser_errors: list[str] = []
-        bw = await rt.browser_search_worker() if rt._browser_worker is not None else None
-        if bw is None:
-            browser_errors.append("browser_launch: Chromium not ready yet")
+        bw = None
+        try:
+            bw = await asyncio.wait_for(rt.browser_search_worker(), timeout=_BROWSER_LAUNCH_TIMEOUT)
+        except TimeoutError:
+            browser_errors.append("browser_launch: timed out after 30s")
+        except Exception as exc:  # noqa: BLE001
+            browser_errors.append(f"browser_launch: {type(exc).__name__}: {exc}")
         for engine_name, search_fn in (
             ("browser_google", bw.search_google if bw else None),
             ("browser_ddg", bw.search_ddg if bw else None),

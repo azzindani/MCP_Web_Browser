@@ -110,7 +110,7 @@ _DDG_LITE_SNIPPET_RE = re.compile(
 )
 
 _BING_RESULT_RE = re.compile(
-    r'<li[^>]+class="b_algo"[^>]*>.*?'
+    r'<li[^>]+class="b_algo[^"]*"[^>]*>.*?'
     r'<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
     r'(?:<p[^>]*>(.*?)</p>|<div[^>]+class="b_caption[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>)',
     re.DOTALL,
