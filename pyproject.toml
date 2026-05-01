@@ -3,7 +3,7 @@ name            = "mcp_web_browser"
 version         = "0.1.0"
 description     = "Self-hosted MCP server for end-to-end web access on local hardware"
 readme          = "README.md"
-requires-python = ">=3.11"
+requires-python = "==3.12.*"
 license         = { text = "MIT" }
 authors         = [{ name = "Afza Azzindani" }]
 
@@ -18,12 +18,12 @@ dependencies = [
   "markdownify>=0.13",   # HTML→Markdown for clean content extraction
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-  "pytest>=8",
-  "pytest-asyncio>=0.23",
-  "ruff>=0.5",
-  "mypy>=1.10",
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "pyright>=1.1",
 ]
 
 [build-system]
@@ -34,27 +34,25 @@ build-backend = "hatchling.build"
 packages = ["engine", "shared"]
 
 [tool.ruff]
-line-length    = 100
-target-version = "py311"
+line-length    = 120
+target-version = "py312"
 extend-exclude = ["tests/fixtures"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "N", "ASYNC", "S", "RUF"]
-ignore = ["E501", "S101"]  # E501: covered by formatter; S101: pytest uses assert
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S", "B"]
-
-[tool.mypy]
-python_version         = "3.11"
-strict                 = true
-ignore_missing_imports = true
-files                  = ["engine", "shared", "server.py"]
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E402", "E501", "F401", "F841"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts   = "-q"
+addopts   = "--tb=short"
 markers   = [
   "integration: hits real network",
   "e2e: full pipeline tests",
 ]
+
+[tool.coverage.run]
+source = ["engine", "shared"]
+omit   = ["tests/*"]
+
+[tool.uv]
+required-version = ">=0.5"

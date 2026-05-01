@@ -231,21 +231,36 @@ built-ins.
    import nothing from `mcp.*`.
 4. Wire the tool one-liner in `server.py`. Add a smoke test that
    round-trips a Pydantic-validated call.
-5. Run:
+5. Run in order — all three must pass before committing:
+
+   **Format:**
    ```
-   uv run ruff check .
-   uv run mypy engine shared server.py
-   uv run pytest -q
+   uv run ruff format engine/ shared/ server.py tests/
    ```
-6. Commit on `claude/review-project-completion-y6bds` with a message in
-   the form `<area>: <imperative summary>`.
+
+   **Lint:**
+   ```
+   uv run ruff check engine/ shared/ server.py tests/
+   ```
+
+   **Type-check:**
+   ```
+   uv run pyright engine/ shared/ server.py
+   ```
+
+   **Test:**
+   ```
+   uv run pytest tests/ -q --tb=short
+   ```
+
+6. Commit with a message in the form `<area>: <imperative summary>`.
 7. Update the progress tracker in §7 below.
 
 ## 7. Progress Tracker
 
 ### 7.1 Milestones
 
-- [x] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/mypy/pytest)
+- [x] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/pyright/pytest)
 - [x] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
 - [x] **M3** — `engine/workers/http_worker.py` + resilience layer
 - [x] **M3b** — `engine/workers/search_worker.py` (SearXNG / DDG / Brave)

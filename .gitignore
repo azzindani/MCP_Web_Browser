@@ -15,8 +15,14 @@ build/
 
 # Type-check / lint caches
 .mypy_cache/
+.pyright/
 .ruff_cache/
 .pytest_cache/
+
+# MCP version snapshots (local only)
+.mcp_versions/
+*.mcp_state.json
+*.mcp_receipt.json
 
 # Coverage
 .coverage

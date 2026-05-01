@@ -1,34 +1,22 @@
 {
-  "$schema": "https://modelcontextprotocol.io/schema/mcp.json",
   "mcpServers": {
     "mcp_web_browser": {
-      "command": "uv",
+      "command": "powershell",
       "args": [
-        "run",
-        "--directory",
-        "${HOME}/.mcp/mcp_web_browser",
-        "--with-requirements",
-        "${HOME}/.mcp/mcp_web_browser/pyproject.toml",
-        "python",
-        "${HOME}/.mcp/mcp_web_browser/server.py"
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Web_Browser'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Web_Browser.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location $d; uv sync --quiet; uv run playwright install chromium --quiet; uv run python server.py"
       ],
       "env": {
-        "MCP_DATA_ROOT": "${HOME}/.mcp/mcp_web_browser",
-        "MCP_CONSTRAINED_MODE": "1",
+        "MCP_CONSTRAINED_MODE": "0",
         "MCP_TIER_BASIC": "1",
         "MCP_TIER_QUERY": "1",
         "MCP_TIER_CRAWL": "0",
         "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888"
-      }
+      },
+      "timeout": 600000
     }
-  },
-  "_install": {
-    "description": "Self-updating launcher. Clones on first run, pulls on each subsequent run.",
-    "preLaunch": [
-      "test -d ${HOME}/.mcp/mcp_web_browser || git clone https://github.com/azzindani/mcp_web_browser.git ${HOME}/.mcp/mcp_web_browser",
-      "cd ${HOME}/.mcp/mcp_web_browser && git pull --ff-only",
-      "cd ${HOME}/.mcp/mcp_web_browser && uv sync",
-      "cd ${HOME}/.mcp/mcp_web_browser && uv run playwright install chromium"
-    ]
   }
 }

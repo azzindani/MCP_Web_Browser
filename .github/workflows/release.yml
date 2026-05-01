@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Cross-platform test gate ────────────────────────────────────────
+  ci:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
+    env:
+      MCP_CONSTRAINED_MODE: "1"
+      PYTHONPATH: "."
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # ── Quality gates ──
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check .
+
+      - name: Type check (pyright)
+        run: uv run pyright engine/ shared/ server.py
+
+      - name: Verify tool docstrings
+        run: uv run python tests/verify_tool_docstrings.py
+
+      # ── Tests ──
+      - name: Run tests
+        run: uv run python -m pytest tests/ -q --tb=short
+
+  # ── Publish GitHub Release ──────────────────────────────────────────
+  release:
+    name: Create Release
+    needs: ci
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract tag name
+        id: tag
+        run: |
+          echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | head -2 | tail -1)
+
+          if [ -z "$PREV_TAG" ] \
+            || [ "$PREV_TAG" = "${{ steps.tag.outputs.version }}" ]; then
+            LOG=$(git log --oneline --no-decorate | head -50)
+          else
+            LOG=$(git log --oneline --no-decorate \
+              "${PREV_TAG}..HEAD" | head -50)
+          fi
+
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$LOG" | sed 's/^/- /'
+          } > /tmp/changelog.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.version }}
+          name: ${{ steps.tag.outputs.version }}
+          body_path: /tmp/changelog.txt
+          draft: false
+          prerelease: >-
+            ${{
+              contains(steps.tag.outputs.version, '-rc')
+              || contains(steps.tag.outputs.version, '-beta')
+              || contains(steps.tag.outputs.version, '-alpha')
+            }}
+          generate_release_notes: true

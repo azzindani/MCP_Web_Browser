@@ -2,33 +2,37 @@ name: CI
 
 on:
   push:
-    branches: [main, "claude/**"]
+    branches: ["**"]
   pull_request:
-    branches: [main]
+    branches: ["**"]
 
 jobs:
+  # ── Cross-platform test matrix ──────────────────────────────────────
   test:
-    runs-on: ubuntu-latest
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
+    env:
+      PYTHONPATH: "."
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v4
         with:
-          enable-cache: true
+          python-version: "3.12"
 
-      - name: Set up Python
-        run: uv python install ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --frozen
 
-      - name: Sync dependencies
-        run: uv sync --extra dev
-
+      # ── Architecture compliance gates (Linux only — requires grep) ──
       - name: Compliance gate — no `mcp` imports under engine/ or shared/
+        if: runner.os == 'Linux'
         run: |
           if grep -rE "^(from|import)\s+mcp" engine/ shared/; then
             echo "::error::engine/** and shared/** must not import from mcp.*"
@@ -36,8 +40,8 @@ jobs:
           fi
 
       - name: Compliance gate — no stdout writes from engine/
+        if: runner.os == 'Linux'
         run: |
-          # Allow `display.py` (writes to stderr) and tests; flag anything else.
           if grep -rnE "^\s*print\(" engine/ \
               | grep -v "engine/output/display.py" \
               | grep -v "file=sys.stderr"; then
@@ -45,29 +49,42 @@ jobs:
             exit 1
           fi
 
-      - name: Lint
+      # ── Linting & static analysis ──
+      - name: Lint (ruff)
         run: uv run ruff check .
 
-      - name: Type-check
-        run: uv run mypy engine shared server.py
+      - name: Format check (ruff)
+        run: uv run ruff format --check .
 
-      - name: Unit tests
-        run: uv run pytest tests/unit -q
+      - name: Type check (pyright)
+        run: uv run pyright engine/ shared/ server.py
 
-      - name: Compliance gate — every tool docstring ≤ 80 chars
-        run: |
-          uv run python - <<'EOF'
-          import server
-          mgr = server.app._tool_manager
-          bad = []
-          for tool in mgr.list_tools():
-              first = (tool.description or "").strip().splitlines()[0:1]
-              line = first[0] if first else ""
-              if len(line) > 80:
-                  bad.append((tool.name, len(line), line))
-          if bad:
-              for n, n_chars, line in bad:
-                  print(f"::error::{n} docstring is {n_chars} chars: {line!r}")
-              raise SystemExit(1)
-          print(f"all {len(mgr.list_tools())} tool docstrings within 80-char cap")
-          EOF
+      - name: Verify tool docstrings
+        run: uv run python tests/verify_tool_docstrings.py
+
+      # ── Tests ──
+      - name: Run tests
+        run: uv run pytest tests/unit -q --tb=short
+
+  # ── Constrained mode (8 GB VRAM target) ─────────────────────────────
+  constrained:
+    name: Constrained mode (ubuntu)
+    runs-on: ubuntu-22.04
+
+    env:
+      MCP_CONSTRAINED_MODE: "1"
+      PYTHONPATH: "."
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run tests in constrained mode
+        run: uv run python -m pytest tests/unit -q --tb=short
