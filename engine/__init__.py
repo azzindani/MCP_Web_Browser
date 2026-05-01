@@ -123,6 +123,20 @@ def reset_runtime() -> None:
     _RT = None
 
 
+async def warmup_browser() -> None:
+    """Pre-warm Chromium at startup. Errors are silently ignored."""
+    try:
+        await runtime().browser_search_worker()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+async def shutdown() -> None:
+    """Clean shutdown: close browser, http client, db."""
+    if _RT is not None:
+        await _RT.aclose()
+
+
 # ── Browse tier ────────────────────────────────────────────────────────────
 
 
@@ -169,17 +183,6 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         }
 
     rt = runtime()
-
-    # Pre-warm Chromium in the background while HTTP backends are tried.
-    # By the time they all fail (~4-8s), the browser is already launching.
-    async def _warm() -> BrowserWorker | None:
-        try:
-            return await rt.browser_search_worker()
-        except Exception:  # noqa: BLE001
-            return None
-
-    _browser_task: asyncio.Task[BrowserWorker | None] = asyncio.create_task(_warm())
-
     result = await rt.search_worker().search(query, limit=limit)
     success = result.backend != "none"
     progress = [
@@ -210,12 +213,13 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        # Browser fallback: use the pre-warmed browser task (running since the
-        # HTTP backends started), then try Google first, DDG second.
-        _BROWSER_SEARCH_TIMEOUT = 20.0  # per-engine cap so total stays under 45s
+        # Browser fallback: Chromium is pre-warmed at startup, so this is fast.
+        _BROWSER_SEARCH_TIMEOUT = 20.0  # per-engine hard cap
         cap = get_max_results() if limit is None else limit
         browser_errors: list[str] = []
-        bw = await _browser_task  # already mostly warm by now
+        bw = await rt.browser_search_worker() if rt._browser_worker is not None else None
+        if bw is None:
+            browser_errors.append("browser_launch: Chromium not ready yet")
         for engine_name, search_fn in (
             ("browser_google", bw.search_google if bw else None),
             ("browser_ddg", bw.search_ddg if bw else None),
@@ -255,7 +259,6 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         )
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
-        _browser_task.cancel()
         _SEARCH_FAIL_COUNTS.pop(query_key, None)
         res["suggested_next"] = [
             next_step("browse_fetch", "fetch and index a result URL"),
