@@ -8,10 +8,16 @@ All notable changes to this project will be documented in this file.
 
 ### Fix: `browse_search` — TLS fingerprint impersonation for DDG and Brave
 
-Search backends DDG and Brave were still failing (~9.6 s) because plain `httpx`
-triggers bot-detection TLS fingerprinting. Both backends now use `curl_cffi`
-with `impersonate="chrome120"` (the same Chrome-120 TLS profile already used by
-`browse_fetch`). `httpx` is kept as a fallback if `curl_cffi` is not installed.
+Search backends DDG and Brave were still failing because:
+1. Plain `httpx` triggers bot-detection TLS fingerprinting on DDG/Brave.
+2. `curl_cffi`'s `AsyncSession` silently fails on Windows Proactor event loops.
+
+Both backends now use `curl_cffi`'s **sync** `Session` via `asyncio.to_thread()`,
+which works correctly on all platforms including Windows. `httpx` is kept as a
+fallback if `curl_cffi` is not installed.
+
+Backend errors are now surfaced in `backend_errors` on every failed response,
+so the exact failure reason (HTTP status, exception type) is visible.
 
 ### Fix: `browse_search` — current date injected into every response
 
