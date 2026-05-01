@@ -143,6 +143,12 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         if success
         else fail("Web search", f"all backends failed for: {query}")
     ]
+    try:
+        _tz = zoneinfo.ZoneInfo(DEFAULTS.TIMEZONE)
+        _now = datetime.now(_tz)
+    except zoneinfo.ZoneInfoNotFoundError:
+        _now = datetime.now(UTC)
+    _date_str = _now.strftime("%Y-%m-%d")
     res: dict[str, Any] = {
         "ok": success,
         "op": "browse_search",
@@ -154,6 +160,9 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "total": result.total,
         "truncated": result.truncated,
         "elapsed_ms": result.elapsed_ms,
+        "current_date": _date_str,
+        "current_year": _now.year,
+        "date_hint": f"Today is {_now.strftime('%A')}, {_date_str}. Prefer sources from {_now.year}.",
         "progress": progress,
     }
     if not success:

@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.3] — 2026-05-01
+
+### Fix: `browse_search` — TLS fingerprint impersonation for DDG and Brave
+
+Search backends DDG and Brave were still failing (~9.6 s) because plain `httpx`
+triggers bot-detection TLS fingerprinting. Both backends now use `curl_cffi`
+with `impersonate="chrome120"` (the same Chrome-120 TLS profile already used by
+`browse_fetch`). `httpx` is kept as a fallback if `curl_cffi` is not installed.
+
+### Fix: `browse_search` — current date injected into every response
+
+Every `browse_search` response now includes:
+
+```json
+{
+  "current_date": "2026-05-01",
+  "current_year": 2026,
+  "date_hint": "Today is Thursday, 2026-05-01. Prefer sources from 2026."
+}
+```
+
+The model sees the correct year in the same response as the search results,
+preventing stale-year queries (e.g. "best sectors 2024/2025").
+
+---
+
 ## [0.1.2] — 2026-05-01
 
 ### New: `browse_datetime` tool — current date and time context

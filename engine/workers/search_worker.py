@@ -16,16 +16,26 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html import unescape
-from typing import Final
+from typing import Any, Final
 from urllib.parse import parse_qs, quote_plus, urljoin, urlparse
 
 import httpx
+
+try:
+    from curl_cffi.requests import AsyncSession as CurlSession
+
+    _CURL_CFFI = True
+except ImportError:  # pragma: no cover
+    CurlSession: Any = None  # type: ignore[misc]
+    _CURL_CFFI = False
 
 from engine.config.defaults import DEFAULTS
 from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
 from engine.resilience.retry import with_retry
 from shared.platform_utils import get_max_results
+
+_CURL_IMPERSONATE = "chrome120"
 
 _SEARXNG_URL: Final[str] = os.environ.get("MCP_SEARCH_BACKEND", "http://127.0.0.1:8888")
 _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
@@ -154,6 +164,13 @@ def _parse_brave(body: str, cap: int) -> list[SearchHit]:
     return hits
 
 
+async def _curl_search_get(url: str, params: dict[str, str], headers: dict[str, str]) -> tuple[int, str]:
+    """GET via curl_cffi with Chrome TLS impersonation. Bypasses bot detection on DDG/Brave."""
+    async with CurlSession(impersonate=_CURL_IMPERSONATE) as session:
+        resp = await session.get(url, params=params, headers=headers, timeout=_SEARCH_TIMEOUT, allow_redirects=True)
+        return resp.status_code, resp.text
+
+
 class SearchWorker:
     def __init__(
         self,
@@ -252,47 +269,56 @@ class SearchWorker:
             return []
         await self._limiter.acquire(domain)
         try:
-            response = await with_retry(
-                lambda: self._client.get(
-                    _DDG_LITE_URL,
-                    params={"q": query},
-                    headers=_SEARCH_HEADERS,
-                    timeout=_SEARCH_TIMEOUT,
-                ),
-                max_retries=2,
-            )
-        except httpx.HTTPError:
+            if _CURL_CFFI:
+                status, body = await _curl_search_get(_DDG_LITE_URL, {"q": query}, _SEARCH_HEADERS)
+            else:
+                response = await with_retry(
+                    lambda: self._client.get(
+                        _DDG_LITE_URL,
+                        params={"q": query},
+                        headers=_SEARCH_HEADERS,
+                        timeout=_SEARCH_TIMEOUT,
+                    ),
+                    max_retries=2,
+                )
+                status, body = response.status_code, response.text
+        except (httpx.HTTPError, Exception):
             self._breaker.failure(domain)
             return []
-        if response.status_code >= 400:
+        if status >= 400:
             self._breaker.failure(domain)
             return []
         self._breaker.success(domain)
-        return _parse_ddg_lite(response.text, cap)
+        return _parse_ddg_lite(body, cap)
 
     async def _brave(self, query: str, cap: int) -> list[SearchHit]:
         domain = "search.brave.com"
         if not self._breaker.allow(domain):
             return []
         await self._limiter.acquire(domain)
+        brave_headers = {**_SEARCH_HEADERS, "Referer": "https://www.google.com/"}
         try:
-            response = await with_retry(
-                lambda: self._client.get(
-                    _BRAVE_URL,
-                    params={"q": query, "source": "web"},
-                    headers={**_SEARCH_HEADERS, "Referer": "https://www.google.com/"},
-                    timeout=_SEARCH_TIMEOUT,
-                ),
-                max_retries=2,
-            )
-        except httpx.HTTPError:
+            if _CURL_CFFI:
+                status, body = await _curl_search_get(_BRAVE_URL, {"q": query, "source": "web"}, brave_headers)
+            else:
+                response = await with_retry(
+                    lambda: self._client.get(
+                        _BRAVE_URL,
+                        params={"q": query, "source": "web"},
+                        headers=brave_headers,
+                        timeout=_SEARCH_TIMEOUT,
+                    ),
+                    max_retries=2,
+                )
+                status, body = response.status_code, response.text
+        except (httpx.HTTPError, Exception):
             self._breaker.failure(domain)
             return []
-        if response.status_code >= 400:
+        if status >= 400:
             self._breaker.failure(domain)
             return []
         self._breaker.success(domain)
-        return _parse_brave(response.text, cap)
+        return _parse_brave(body, cap)
 
     @staticmethod
     def encode_query(query: str) -> str:

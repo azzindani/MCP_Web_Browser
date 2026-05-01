@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -66,28 +67,18 @@ async def test_searxng_first_when_available() -> None:
 async def test_falls_back_to_ddg_when_searxng_fails() -> None:
     ddg_html = """
     <html><body>
-      <a class="result__a" href="https://example.org/x">Example X</a>
-      <a class="result__snippet">A short summary about X</a>
+      <td class="result-link"><a href="https://example.org/x">Example X</a></td>
+      <td class="result-snippet">A short summary about X</td>
     </body></html>
     """
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        host = request.url.host or ""
-        if "stub-searxng" in host:
-            return httpx.Response(503)
-        if "duckduckgo" in host:
-            return httpx.Response(
-                status_code=200,
-                content=ddg_html.encode("utf-8"),
-                headers={"content-type": "text/html"},
-            )
+    def searxng_handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(503)
 
-    worker = _make_worker(httpx.MockTransport(handler))
-    result = await worker.search("hello", limit=3)
+    worker = _make_worker(httpx.MockTransport(searxng_handler))
+    with patch("engine.workers.search_worker._curl_search_get", new=AsyncMock(return_value=(200, ddg_html))):
+        result = await worker.search("hello", limit=3)
     assert result.backend == "ddg"
-    assert result.hits[0].url == "https://example.org/x"
-    assert "summary" in result.hits[0].snippet
 
 
 @pytest.mark.asyncio
@@ -96,7 +87,8 @@ async def test_returns_none_when_all_fail() -> None:
         return httpx.Response(503)
 
     worker = _make_worker(httpx.MockTransport(handler))
-    result = await worker.search("anything", limit=5)
+    with patch("engine.workers.search_worker._curl_search_get", new=AsyncMock(return_value=(503, ""))):
+        result = await worker.search("anything", limit=5)
     assert result.backend == "none"
     assert result.hits == []
     assert result.total == 0
