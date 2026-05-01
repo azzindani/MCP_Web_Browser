@@ -79,8 +79,7 @@ class QueryEngine:
             except sqlite3.OperationalError:
                 out[table] = 0
         size_row = self._conn.execute(
-            "SELECT page_count * page_size AS s "
-            "FROM pragma_page_count(), pragma_page_size()"
+            "SELECT page_count * page_size AS s FROM pragma_page_count(), pragma_page_size()"
         ).fetchone()
         out["db_bytes"] = int(size_row["s"]) if size_row and size_row["s"] else 0
         return out

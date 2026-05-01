@@ -2,19 +2,18 @@
 
 All pure-logic tests — no network, no MCP, no I/O except tmp_path.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-import pytest
-
+from shared.handover import make_handover, next_step
 from shared.progress import fail, info, ok, undo, warn
 from shared.receipt import append_receipt
-from shared.handover import make_handover, next_step
-
 
 # ── progress helpers ───────────────────────────────────────────────────────────
+
 
 def test_ok_returns_correct_status() -> None:
     r = ok("Loaded", "5 rows")
@@ -52,6 +51,7 @@ def test_all_helpers_return_dicts() -> None:
 
 
 # ── receipt ──────────────────────────────────────────────────────────────────
+
 
 def test_receipt_creates_file(tmp_path: Path) -> None:
     db = tmp_path / "krawl.db"
@@ -104,6 +104,7 @@ def test_receipt_survives_corrupt_json(tmp_path: Path) -> None:
 
 
 # ── handover ─────────────────────────────────────────────────────────────────
+
 
 def test_next_step_returns_dict() -> None:
     s = next_step("browse_fetch", "fetch the URL")

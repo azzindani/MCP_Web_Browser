@@ -9,25 +9,19 @@ import pytest
 from shared.path_safety import UnsafePathError, resolve_path
 
 
-def test_relative_path_resolves_under_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_relative_path_resolves_under_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     out = resolve_path("foo/bar.db")
     assert out == (tmp_path / "foo" / "bar.db").resolve()
 
 
-def test_traversal_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_traversal_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     with pytest.raises(UnsafePathError):
         resolve_path("../escape.db")
 
 
-def test_null_byte_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_null_byte_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     with pytest.raises(UnsafePathError):
         resolve_path("foo\x00bar.db")

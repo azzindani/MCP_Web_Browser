@@ -4,6 +4,7 @@ Mirrors output/export.ts in krawl. snapshot() is called before every
 write; files land via atomic_write_text so a crash leaves the previous
 version intact.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,8 +19,14 @@ if TYPE_CHECKING:
     from engine.db.query import QueryEngine
 
 _EXPORT_TABLES = (
-    "pages", "stocks", "news", "market_indices",
-    "files", "links", "domains", "endpoints",
+    "pages",
+    "stocks",
+    "news",
+    "market_indices",
+    "files",
+    "links",
+    "domains",
+    "endpoints",
 )
 
 
@@ -28,7 +35,7 @@ def _stderr(msg: str) -> None:
 
 
 class Exporter:
-    def __init__(self, query: "QueryEngine") -> None:
+    def __init__(self, query: QueryEngine) -> None:
         self._query = query
 
     def export_csv(
@@ -55,7 +62,7 @@ class Exporter:
                 if p:
                     _stderr(f"exported {table} → {p}")
                     paths.append(p)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 _stderr(f"failed to export {table}: {exc}")
         return paths
 

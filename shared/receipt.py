@@ -4,6 +4,7 @@ Stored at <db_path>.mcp_receipt.json — one entry per write op.
 Read-only ops (search, inspect, probe, verify, query) are NOT logged.
 Write ops: browse_fetch, crawl_run, query_export.
 """
+
 from __future__ import annotations
 
 import json

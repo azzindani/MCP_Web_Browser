@@ -7,6 +7,7 @@ Scrapling features ported here:
   find_similar() — adaptive element matching: score candidates by text/
                    attrs/position similarity and return those above threshold
 """
+
 from __future__ import annotations
 
 import re
@@ -14,17 +15,23 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+lxml_html: Any = None
+_LXML = False
 try:
-    from lxml import html as lxml_html
+    from lxml import html as lxml_html  # type: ignore[assignment]
+
     _LXML = True
 except ImportError:  # pragma: no cover
-    _LXML = False
+    pass
 
+_md: Any = None
+_MARKDOWNIFY = False
 try:
-    from markdownify import markdownify as _md
+    from markdownify import markdownify as _md  # type: ignore[assignment]
+
     _MARKDOWNIFY = True
 except ImportError:  # pragma: no cover
-    _MARKDOWNIFY = False
+    pass
 
 _SKIP_TAGS: frozenset[str] = frozenset(
     {"script", "style", "meta", "link", "noscript", "head", "template"}
@@ -36,8 +43,8 @@ _SKIP_SCHEMES: tuple[str, ...] = ("javascript:", "mailto:", "tel:", "data:")
 class ExtractionResult:
     ok: bool
     selector: str
-    mode: str          # css | xpath | text | regex
-    output_type: str   # text | html | attrs | all
+    mode: str  # css | xpath | text | regex
+    output_type: str  # text | html | attrs | all
     matches: list[dict[str, Any]] = field(default_factory=list)
     count: int = 0
     truncated: bool = False
@@ -45,6 +52,7 @@ class ExtractionResult:
 
 
 # ── helpers ────────────────────────────────────────────────────────────
+
 
 def _el_path(el: Any) -> str:
     parts: list[str] = []
@@ -97,6 +105,7 @@ def _visible_text(root: Any) -> str:
 
 # ── main class ─────────────────────────────────────────────────────────
 
+
 class HtmlExtractor:
     """Parse HTML and run CSS selector, XPath, text, or regex extraction.
 
@@ -109,9 +118,7 @@ class HtmlExtractor:
 
     def __init__(self, html: str, base_url: str = "") -> None:
         if not _LXML:
-            raise RuntimeError(
-                "lxml not installed. Run: pip install 'lxml>=4.9' 'cssselect>=1.2'"
-            )
+            raise RuntimeError("lxml not installed. Run: pip install 'lxml>=4.9' 'cssselect>=1.2'")
         parser = lxml_html.HTMLParser(recover=True, encoding="utf-8")
         self._doc = lxml_html.document_fromstring(
             html.encode("utf-8", errors="replace"), parser=parser
@@ -119,7 +126,7 @@ class HtmlExtractor:
         if base_url:
             try:
                 self._doc.make_links_absolute(base_url, resolve_base_href=False)
-            except Exception:
+            except Exception:  # noqa: S110
                 pass
 
     # ---- selection -------------------------------------------------------
@@ -135,14 +142,21 @@ class HtmlExtractor:
             elements = self._doc.cssselect(selector)
         except Exception as exc:
             return ExtractionResult(
-                ok=False, selector=selector, mode="css",
-                output_type=output_type, error=str(exc)[:160],
+                ok=False,
+                selector=selector,
+                mode="css",
+                output_type=output_type,
+                error=str(exc)[:160],
             )
         truncated = len(elements) > limit
         return ExtractionResult(
-            ok=True, selector=selector, mode="css", output_type=output_type,
+            ok=True,
+            selector=selector,
+            mode="css",
+            output_type=output_type,
             matches=[_el_dict(el, output_type) for el in elements[:limit]],
-            count=len(elements), truncated=truncated,
+            count=len(elements),
+            truncated=truncated,
         )
 
     def xpath(
@@ -156,8 +170,11 @@ class HtmlExtractor:
             raw = self._doc.xpath(query)
         except Exception as exc:
             return ExtractionResult(
-                ok=False, selector=query, mode="xpath",
-                output_type=output_type, error=str(exc)[:160],
+                ok=False,
+                selector=query,
+                mode="xpath",
+                output_type=output_type,
+                error=str(exc)[:160],
             )
         raw_list: list[Any] = raw if isinstance(raw, list) else [raw]
         items: list[dict[str, Any]] = []
@@ -167,8 +184,12 @@ class HtmlExtractor:
             elif hasattr(el, "tag"):
                 items.append(_el_dict(el, output_type))
         return ExtractionResult(
-            ok=True, selector=query, mode="xpath", output_type=output_type,
-            matches=items, count=len(raw_list),
+            ok=True,
+            selector=query,
+            mode="xpath",
+            output_type=output_type,
+            matches=items,
+            count=len(raw_list),
             truncated=len(raw_list) > limit,
         )
 
@@ -193,9 +214,13 @@ class HtmlExtractor:
                 if len(matched) >= limit * 4:
                     break
         return ExtractionResult(
-            ok=True, selector=text, mode="text", output_type=output_type,
+            ok=True,
+            selector=text,
+            mode="text",
+            output_type=output_type,
             matches=[_el_dict(el, output_type) for el in matched[:limit]],
-            count=len(matched), truncated=len(matched) > limit,
+            count=len(matched),
+            truncated=len(matched) > limit,
         )
 
     def find_by_regex(
@@ -209,8 +234,11 @@ class HtmlExtractor:
             compiled = re.compile(pattern, re.IGNORECASE | re.DOTALL)
         except re.error as exc:
             return ExtractionResult(
-                ok=False, selector=pattern, mode="regex",
-                output_type=output_type, error=str(exc),
+                ok=False,
+                selector=pattern,
+                mode="regex",
+                output_type=output_type,
+                error=str(exc),
             )
         matched: list[Any] = []
         for el in self._doc.iter():
@@ -222,9 +250,13 @@ class HtmlExtractor:
                 if len(matched) >= limit * 4:
                     break
         return ExtractionResult(
-            ok=True, selector=pattern, mode="regex", output_type=output_type,
+            ok=True,
+            selector=pattern,
+            mode="regex",
+            output_type=output_type,
             matches=[_el_dict(el, output_type) for el in matched[:limit]],
-            count=len(matched), truncated=len(matched) > limit,
+            count=len(matched),
+            truncated=len(matched) > limit,
         )
 
     # ---- convenience -------------------------------------------------------
@@ -295,9 +327,9 @@ class HtmlExtractor:
         """Adaptive element matching (Scrapling-inspired).
 
         Scores every element against the provided hints and returns those
-        whose combined similarity exceeds `threshold` (0–1).
+        whose combined similarity exceeds `threshold` (0-1).
 
-        Scoring breakdown (each component 0–1, equally weighted):
+        Scoring breakdown (each component 0-1, equally weighted):
           text_sim   — SequenceMatcher ratio of element visible text vs `text`
           tag_sim    — 1 if tag matches, 0 otherwise (skipped if tag=="")
           attr_sim   — fraction of provided attrs that match element attrs
@@ -313,9 +345,7 @@ class HtmlExtractor:
 
             if text:
                 el_text = " ".join(el.itertext()).strip()
-                components.append(
-                    SequenceMatcher(None, text.lower(), el_text.lower()).ratio()
-                )
+                components.append(SequenceMatcher(None, text.lower(), el_text.lower()).ratio())
 
             if tag:
                 components.append(1.0 if el.tag.lower() == tag.lower() else 0.0)
@@ -323,8 +353,7 @@ class HtmlExtractor:
             if want_attrs:
                 el_attrs = dict(el.attrib) if el.attrib is not None else {}
                 matched_attrs = sum(
-                    1 for k, v in want_attrs.items()
-                    if v.lower() in (el_attrs.get(k) or "").lower()
+                    1 for k, v in want_attrs.items() if v.lower() in (el_attrs.get(k) or "").lower()
                 )
                 components.append(matched_attrs / len(want_attrs))
 
@@ -337,8 +366,11 @@ class HtmlExtractor:
         scores.sort(key=lambda x: x[0], reverse=True)
         top = [el for _, el in scores[:limit]]
         return ExtractionResult(
-            ok=True, selector=f"similar(text={text!r},tag={tag!r})",
-            mode="similar", output_type=output_type,
+            ok=True,
+            selector=f"similar(text={text!r},tag={tag!r})",
+            mode="similar",
+            output_type=output_type,
             matches=[_el_dict(el, output_type) for el in top],
-            count=len(scores), truncated=len(scores) > limit,
+            count=len(scores),
+            truncated=len(scores) > limit,
         )

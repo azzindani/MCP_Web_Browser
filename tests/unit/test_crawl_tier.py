@@ -15,9 +15,7 @@ from engine.resilience.rate_limiter import RateLimiter
 
 
 @pytest.fixture()
-def isolated_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def isolated_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     engine.reset_runtime()
     rt = engine.runtime()
@@ -25,7 +23,7 @@ def isolated_engine(
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_schema(conn)
-    rt._db = conn  # noqa: SLF001 — test-only override
+    rt._db = conn
 
     pages = {
         "https://example.com/section/index.html": (
@@ -48,25 +46,29 @@ def isolated_engine(
             return httpx.Response(404, content=b"missing")
         ct, body = page
         return httpx.Response(
-            200, content=body.encode("utf-8"),
+            200,
+            content=body.encode("utf-8"),
             headers={"content-type": ct},
         )
 
-    rt._client = httpx.AsyncClient(  # noqa: SLF001 — test-only override
-        transport=httpx.MockTransport(handler), timeout=2.0,
+    rt._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        timeout=2.0,
     )
 
     # Speed up the rate limiter so tests don't sleep on real wall time.
     class _FakeClock:
         def __init__(self) -> None:
             self.t = 0
+
         def now(self) -> int:
             return self.t
+
         async def sleep(self, seconds: float) -> None:
             self.t += int(seconds * 1000) + 1
 
     clock = _FakeClock()
-    rt._limiter = RateLimiter(now_fn=clock.now, sleep_fn=clock.sleep)  # noqa: SLF001
+    rt._limiter = RateLimiter(now_fn=clock.now, sleep_fn=clock.sleep)
 
     yield None
     asyncio.run(rt.aclose())
@@ -74,9 +76,7 @@ def isolated_engine(
 
 
 def test_crawl_plan_lists_frontier(isolated_engine: None) -> None:
-    out = asyncio.run(
-        engine.crawl_plan("https://example.com/section/index.html")
-    )
+    out = asyncio.run(engine.crawl_plan("https://example.com/section/index.html"))
     assert out["ok"] is True
     urls = [link for link in out["links"]]
     assert "https://example.com/section/a.html" in urls
@@ -106,7 +106,9 @@ def test_crawl_verify_summarises_run(isolated_engine: None) -> None:
     asyncio.run(
         engine.crawl_run(
             "https://example.com/section/index.html",
-            max_pages=3, max_depth=1, run_id="run-V",
+            max_pages=3,
+            max_depth=1,
+            run_id="run-V",
         )
     )
     # crawl_verify reads from task_log; CrawlWorker doesn't log_task itself,
@@ -122,7 +124,9 @@ def test_crawl_resume_runs_with_existing_run_id(
     asyncio.run(
         engine.crawl_run(
             "https://example.com/section/index.html",
-            max_pages=2, max_depth=1, run_id="run-R",
+            max_pages=2,
+            max_depth=1,
+            run_id="run-R",
         )
     )
     out = asyncio.run(

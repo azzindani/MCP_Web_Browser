@@ -281,6 +281,7 @@ built-ins.
 | basic   | `browse_locate`  | LOCATE   | [x]    |
 | basic   | `browse_inspect` | INSPECT  | [x]    |
 | basic   | `browse_fetch`   | PATCH    | [x]    |
+| basic   | `browse_extract` | PATCH    | [x]    |
 | basic   | `browse_verify`  | VERIFY   | [x]    |
 | basic   | `browse_status`  | aux      | [x]    |
 | query   | `query_locate`   | LOCATE   | [x]    |

@@ -132,7 +132,9 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        res["hint"] = "Set MCP_SEARCH_BACKEND to a SearXNG URL; call browse_status() to check health."
+        res["hint"] = (
+            "Set MCP_SEARCH_BACKEND to a SearXNG URL; call browse_status() to check health."
+        )
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
         res["suggested_next"] = [
@@ -153,10 +155,15 @@ async def fetch_one(url: str, run_id: str = "mcp") -> dict[str, Any]:
     if result.status == "ok":
         report = rt.indexer().index(
             {
-                "url": result.url, "title": result.title, "status": result.status,
-                "mode": result.mode, "elapsed_ms": result.elapsed_ms,
-                "extracted": result.extracted, "group": result.group,
-                "ticker": result.ticker, "extractedAt": result.extracted_at,
+                "url": result.url,
+                "title": result.title,
+                "status": result.status,
+                "mode": result.mode,
+                "elapsed_ms": result.elapsed_ms,
+                "extracted": result.extracted,
+                "group": result.group,
+                "ticker": result.ticker,
+                "extractedAt": result.extracted_at,
             },
             run_id=run_id,
         )
@@ -165,7 +172,8 @@ async def fetch_one(url: str, run_id: str = "mcp") -> dict[str, Any]:
         if indexed:
             progress.append(info("Tables written", ", ".join(indexed)))
         append_receipt(
-            DEFAULTS.DB_PATH, op="browse_fetch",
+            DEFAULTS.DB_PATH,
+            op="browse_fetch",
             args={"url": url, "run_id": run_id},
             result=f"indexed {len(indexed)} tables: {indexed}",
         )
@@ -174,8 +182,12 @@ async def fetch_one(url: str, run_id: str = "mcp") -> dict[str, Any]:
     res: dict[str, Any] = {
         "ok": result.status == "ok",
         "op": "browse_fetch",
-        "url": result.url, "mode": result.mode, "status": result.status,
-        "elapsed_ms": result.elapsed_ms, "indexed": indexed, "error": result.error,
+        "url": result.url,
+        "mode": result.mode,
+        "status": result.status,
+        "elapsed_ms": result.elapsed_ms,
+        "indexed": indexed,
+        "error": result.error,
         "progress": progress,
     }
     if result.status != "ok":
@@ -212,8 +224,12 @@ async def inspect_one(url: str) -> dict[str, Any]:
     res: dict[str, Any] = {
         "ok": result.status == "ok",
         "op": "browse_inspect",
-        "url": result.url, "title": result.title, "status": result.status,
-        "head": head[:cap], "elapsed_ms": result.elapsed_ms, "error": result.error,
+        "url": result.url,
+        "title": result.title,
+        "status": result.status,
+        "head": head[:cap],
+        "elapsed_ms": result.elapsed_ms,
+        "error": result.error,
         "progress": progress,
     }
     if result.status != "ok":
@@ -238,8 +254,12 @@ async def probe_one(url: str) -> dict[str, Any]:
     domain = urlparse(url).hostname or url
     if not rt._breaker.allow(domain):
         res: dict[str, Any] = {
-            "ok": False, "op": "browse_locate", "url": url, "domain": domain,
-            "mode": "blocked", "error": "circuit open",
+            "ok": False,
+            "op": "browse_locate",
+            "url": url,
+            "domain": domain,
+            "mode": "blocked",
+            "error": "circuit open",
             "progress": [fail("Circuit open", domain)],
             "hint": "Circuit breaker open. Wait or call browse_status() to check.",
             "suggested_next": [next_step("browse_status", "check circuit breaker state")],
@@ -250,8 +270,12 @@ async def probe_one(url: str) -> dict[str, Any]:
         response = await rt.http_client().head(url, follow_redirects=True, timeout=5.0)
     except httpx.HTTPError as exc:
         res = {
-            "ok": False, "op": "browse_locate", "url": url, "domain": domain,
-            "mode": "error", "error": str(exc)[:80],
+            "ok": False,
+            "op": "browse_locate",
+            "url": url,
+            "domain": domain,
+            "mode": "error",
+            "error": str(exc)[:80],
             "progress": [fail("HEAD probe failed", str(exc)[:60])],
             "hint": "Network error. Try browse_inspect() or check browse_status().",
             "suggested_next": [
@@ -264,8 +288,13 @@ async def probe_one(url: str) -> dict[str, Any]:
     ct = response.headers.get("content-type", "").lower()
     mode = "http_json" if "json" in ct else "http_curl"
     res = {
-        "ok": True, "op": "browse_locate", "url": url, "domain": domain,
-        "mode": mode, "status_code": response.status_code, "content_type": ct,
+        "ok": True,
+        "op": "browse_locate",
+        "url": url,
+        "domain": domain,
+        "mode": mode,
+        "status_code": response.status_code,
+        "content_type": ct,
         "progress": [ok("Probed", f"{domain} → {mode} ({response.status_code})")],
         "suggested_next": [
             next_step("browse_inspect", "peek content without indexing"),
@@ -283,7 +312,10 @@ def verify_one(url: str) -> dict[str, Any]:
     rows = rt.query().select("SELECT * FROM pages WHERE url = ? LIMIT 1", (url,), limit=1)
     if not rows:
         res: dict[str, Any] = {
-            "ok": False, "op": "browse_verify", "url": url, "error": "not_indexed",
+            "ok": False,
+            "op": "browse_verify",
+            "url": url,
+            "error": "not_indexed",
             "progress": [fail("Not indexed", url)],
             "hint": "URL not in DB. Call browse_fetch() to fetch and index it first.",
             "suggested_next": [
@@ -295,10 +327,15 @@ def verify_one(url: str) -> dict[str, Any]:
         return res
     row = rows[0]
     res = {
-        "ok": True, "op": "browse_verify",
-        "url": row["url"], "title": row["title"], "domain": row["domain"],
-        "status": row["status"], "mode": row["mode"],
-        "first_seen": row["first_seen"], "last_seen": row["last_seen"],
+        "ok": True,
+        "op": "browse_verify",
+        "url": row["url"],
+        "title": row["title"],
+        "domain": row["domain"],
+        "status": row["status"],
+        "mode": row["mode"],
+        "first_seen": row["first_seen"],
+        "last_seen": row["last_seen"],
         "progress": [ok("Verified", f"{row['url']} — {row['status']} via {row['mode']}")],
         "suggested_next": [
             next_step("browse_extract", "extract structured data with CSS/XPath"),
@@ -314,7 +351,9 @@ def engine_status() -> dict[str, Any]:
     s = runtime().status()
     progress = [ok("Engine healthy")] if s["ok"] else [warn("Engine issues")]
     res: dict[str, Any] = {
-        **s, "op": "browse_status", "progress": progress,
+        **s,
+        "op": "browse_status",
+        "progress": progress,
         "suggested_next": [
             next_step("browse_search", "search the web"),
             next_step("query_locate", "inspect indexed data tables"),
@@ -331,8 +370,10 @@ def query_locate() -> dict[str, Any]:
     s = runtime().query().stats()
     tables = {k: v for k, v in s.items() if k != "db_bytes"}
     res: dict[str, Any] = {
-        "ok": True, "op": "query_locate",
-        "tables": tables, "db_bytes": s.get("db_bytes", 0),
+        "ok": True,
+        "op": "query_locate",
+        "tables": tables,
+        "db_bytes": s.get("db_bytes", 0),
         "progress": [ok("Listed tables", f"{len(tables)} tables")],
         "suggested_next": [
             next_step("query_search", "full-text search across indexed pages"),
@@ -344,16 +385,16 @@ def query_locate() -> dict[str, Any]:
     return res
 
 
-def query_search(
-    query: str, table: str = "fts_pages", limit: int | None = None
-) -> dict[str, Any]:
+def query_search(query: str, table: str = "fts_pages", limit: int | None = None) -> dict[str, Any]:
     rt = runtime()
     cap = limit if limit is not None else get_max_rows()
     try:
         rows = rt.query().search(query, table=table, limit=cap)
     except ValueError as exc:
         res: dict[str, Any] = {
-            "ok": False, "op": "query_search", "error": str(exc),
+            "ok": False,
+            "op": "query_search",
+            "error": str(exc),
             "hint": "table must be fts_pages|fts_news|fts_files",
             "progress": [fail("Invalid table", str(exc))],
             "suggested_next": [next_step("query_locate", "list available tables")],
@@ -365,9 +406,14 @@ def query_search(
     if truncated:
         progress.append(warn("Results capped", f"limit={cap}; narrow query or increase limit"))
     res = {
-        "ok": True, "op": "query_search",
-        "table": table, "query": query, "rows": rows,
-        "total": len(rows), "truncated": truncated, "progress": progress,
+        "ok": True,
+        "op": "query_search",
+        "table": table,
+        "query": query,
+        "rows": rows,
+        "total": len(rows),
+        "truncated": truncated,
+        "progress": progress,
         "suggested_next": [
             next_step("query_select", "refine with custom SQL"),
             next_step("browse_extract", "extract structured data from a result URL"),
@@ -387,7 +433,9 @@ def query_select(
         rows = rt.query().select(sql, params=params, limit=cap)
     except ValueError as exc:
         res: dict[str, Any] = {
-            "ok": False, "op": "query_select", "error": str(exc),
+            "ok": False,
+            "op": "query_select",
+            "error": str(exc),
             "hint": "only SELECT/WITH allowed; call query_locate() to see table names",
             "progress": [fail("SQL rejected", str(exc))],
             "suggested_next": [next_step("query_locate", "list table names")],
@@ -397,10 +445,16 @@ def query_select(
     truncated = len(rows) >= cap
     progress = [ok("SQL executed", f"{len(rows)} rows")]
     if truncated:
-        progress.append(warn("Results capped", f"add LIMIT {cap} or use query_export() for full data"))
+        progress.append(
+            warn("Results capped", f"add LIMIT {cap} or use query_export() for full data")
+        )
     res = {
-        "ok": True, "op": "query_select",
-        "rows": rows, "total": len(rows), "truncated": truncated, "progress": progress,
+        "ok": True,
+        "op": "query_select",
+        "rows": rows,
+        "total": len(rows),
+        "truncated": truncated,
+        "progress": progress,
         "suggested_next": [next_step("query_export", "export full result set to CSV/JSON")],
     }
     res["token_estimate"] = _tok(res)
@@ -410,7 +464,9 @@ def query_select(
 def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
     if fmt not in ("csv", "json"):
         res: dict[str, Any] = {
-            "ok": False, "op": "query_export", "error": "bad_format",
+            "ok": False,
+            "op": "query_export",
+            "error": "bad_format",
             "hint": "fmt must be csv|json",
             "progress": [fail("Bad format", fmt)],
             "suggested_next": [next_step("query_locate", "list available tables")],
@@ -419,7 +475,9 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
         return res
     if table not in STATS_TABLES:
         res = {
-            "ok": False, "op": "query_export", "error": "unknown_table",
+            "ok": False,
+            "op": "query_export",
+            "error": "unknown_table",
             "hint": f"table not in {sorted(STATS_TABLES)}; call query_locate() to list tables",
             "progress": [fail("Unknown table", table)],
             "suggested_next": [next_step("query_locate", "list available tables")],
@@ -435,7 +493,9 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
             text = json.dumps(rows, indent=2, default=str)
     except (ValueError, sqlite3.OperationalError) as exc:
         res = {
-            "ok": False, "op": "query_export", "error": str(exc)[:80],
+            "ok": False,
+            "op": "query_export",
+            "error": str(exc)[:80],
             "hint": "export failed; call query_stats() to verify table is non-empty",
             "progress": [fail("Export error", str(exc)[:60])],
             "suggested_next": [next_step("query_stats", "verify table is non-empty")],
@@ -446,13 +506,16 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
     snapshot(target)
     atomic_write_text(target, text)
     append_receipt(
-        DEFAULTS.DB_PATH, op="query_export",
+        DEFAULTS.DB_PATH,
+        op="query_export",
         args={"table": table, "out_path": out_path, "fmt": fmt},
         result=f"exported {len(text)} bytes to {target}",
     )
     res = {
-        "ok": True, "op": "query_export",
-        "path": str(target), "bytes": len(text),
+        "ok": True,
+        "op": "query_export",
+        "path": str(target),
+        "bytes": len(text),
         "progress": [ok("Exported", f"{table} → {target} ({len(text)} bytes, {fmt})")],
         "suggested_next": [next_step("query_stats", "check remaining table sizes")],
     }
@@ -463,7 +526,9 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
 def query_stats() -> dict[str, Any]:
     s = runtime().query().stats()
     res: dict[str, Any] = {
-        "ok": True, "op": "query_stats", **s,
+        "ok": True,
+        "op": "query_stats",
+        **s,
         "progress": [ok("Stats loaded")],
         "suggested_next": [
             next_step("query_search", "full-text search across tables"),
@@ -498,7 +563,9 @@ async def crawl_plan(url: str, max_links: int = 25) -> dict[str, Any]:
     report = await worker.run(CrawlTask(url=url, crawl_depth=1, max_pages=1))
     if not report.pages:
         res: dict[str, Any] = {
-            "ok": False, "op": "crawl_plan", "error": "fetch_failed",
+            "ok": False,
+            "op": "crawl_plan",
+            "error": "fetch_failed",
             "progress": [fail("Seed fetch failed", url)],
             "hint": "Use crawl_locate() to probe mode, or browse_inspect() for bot-walls.",
             "suggested_next": [
@@ -510,11 +577,16 @@ async def crawl_plan(url: str, max_links: int = 25) -> dict[str, Any]:
         return res
     seed = report.pages[0]
     res = {
-        "ok": seed.status == "ok", "op": "crawl_plan",
-        "url": seed.url, "title": seed.title,
-        "links": seed.links[:max_links], "files": seed.files[:max_links],
+        "ok": seed.status == "ok",
+        "op": "crawl_plan",
+        "url": seed.url,
+        "title": seed.title,
+        "links": seed.links[:max_links],
+        "files": seed.files[:max_links],
         "elapsed_ms": seed.elapsed_ms,
-        "progress": [ok("Frontier enumerated", f"{len(seed.links)} links, {len(seed.files)} files")],
+        "progress": [
+            ok("Frontier enumerated", f"{len(seed.links)} links, {len(seed.files)} files")
+        ],
         "suggested_next": [next_step("crawl_run", f"crawl up to {get_max_pages()} pages")],
         "carry_forward": {"url": url},
     }
@@ -532,9 +604,9 @@ async def crawl_run(
     pages_cap = max_pages if max_pages is not None else get_max_pages()
     depth_cap = max_depth if max_depth is not None else get_max_depth()
     rid = run_id or f"crawl-{int(time.time())}"
-    now_iso = json.dumps(time.time())  # reuse time import
-    from datetime import datetime, timezone
-    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    from datetime import UTC, datetime
+
+    started_at = datetime.now(UTC).isoformat(timespec="seconds")
     rt.db().execute(
         "INSERT OR IGNORE INTO runs (run_id, started_at) VALUES (?, ?)",
         (rid, started_at),
@@ -552,11 +624,15 @@ async def crawl_run(
             continue
         indexer.index(
             {
-                "url": page.url, "title": page.title,
-                "status": page.status, "mode": page.mode,
+                "url": page.url,
+                "title": page.title,
+                "status": page.status,
+                "mode": page.mode,
                 "elapsed_ms": page.elapsed_ms,
-                "extracted": page.extracted, "group": page.group,
-                "links": page.links, "extractedAt": page.extracted_at,
+                "extracted": page.extracted,
+                "group": page.group,
+                "links": page.links,
+                "extractedAt": page.extracted_at,
             },
             run_id=rid,
         )
@@ -572,16 +648,21 @@ async def crawl_run(
     if report.files_discovered:
         progress.append(info("Files found", str(report.files_discovered)))
     append_receipt(
-        DEFAULTS.DB_PATH, op="crawl_run",
+        DEFAULTS.DB_PATH,
+        op="crawl_run",
         args={"url": url, "max_pages": pages_cap, "max_depth": depth_cap, "run_id": rid},
         result=f"{ok_pages} pages indexed, {report.errors} errors",
     )
     res: dict[str, Any] = {
-        "ok": report.errors < len(report.pages), "op": "crawl_run",
-        "run_id": report.run_id, "seed_url": report.seed_url,
-        "pages": len(report.pages), "errors": report.errors,
+        "ok": report.errors < len(report.pages),
+        "op": "crawl_run",
+        "run_id": report.run_id,
+        "seed_url": report.seed_url,
+        "pages": len(report.pages),
+        "errors": report.errors,
         "files_discovered": report.files_discovered,
-        "started_at": report.started_at, "finished_at": report.finished_at,
+        "started_at": report.started_at,
+        "finished_at": report.finished_at,
         "progress": progress,
         "suggested_next": [
             next_step("crawl_verify", f"verify run {rid}"),
@@ -605,7 +686,10 @@ def crawl_verify(run_id: str) -> dict[str, Any]:
     )
     if not run_rows:
         res: dict[str, Any] = {
-            "ok": False, "op": "crawl_verify", "run_id": run_id, "error": "not_found",
+            "ok": False,
+            "op": "crawl_verify",
+            "run_id": run_id,
+            "error": "not_found",
             "progress": [fail("Run not found", run_id)],
             "hint": "Run ID not in runs table. Call crawl_run() first.",
             "suggested_next": [next_step("query_locate", "list tables and check task_log")],
@@ -614,20 +698,26 @@ def crawl_verify(run_id: str) -> dict[str, Any]:
         return res
     page_rows = rt.query().select(
         "SELECT COUNT(*) AS pages FROM pages WHERE run_id = ?",
-        params=(run_id,), limit=1,
+        params=(run_id,),
+        limit=1,
     )
     pages = int((page_rows[0].get("pages") if page_rows else None) or 0)
     err_rows = rt.query().select(
         "SELECT COUNT(*) AS errors FROM pages WHERE run_id = ? AND status = 'error'",
-        params=(run_id,), limit=1,
+        params=(run_id,),
+        limit=1,
     )
     errors = int((err_rows[0].get("errors") if err_rows else None) or 0)
     progress = [ok("Run verified", f"{pages} pages, {errors} errors")]
     if errors:
         progress.append(warn("Errors present", f"{errors} failed pages"))
     res = {
-        "ok": True, "op": "crawl_verify", "run_id": run_id,
-        "pages": pages, "errors": errors, "progress": progress,
+        "ok": True,
+        "op": "crawl_verify",
+        "run_id": run_id,
+        "pages": pages,
+        "errors": errors,
+        "progress": progress,
         "suggested_next": [
             next_step("query_search", "search crawled content"),
             next_step("browse_extract", "extract structured data from a crawled URL"),
@@ -649,12 +739,15 @@ async def extract_from_url(
     limit: int | None = None,
 ) -> dict[str, Any]:
     from engine.workers.extractor import HtmlExtractor
+
     rt = runtime()
     cap = limit if limit is not None else get_max_results()
     result = await rt.http_worker().fetch_one(Task(url=url))
     if result.status != "ok":
         res: dict[str, Any] = {
-            "ok": False, "op": "browse_extract", "url": url,
+            "ok": False,
+            "op": "browse_extract",
+            "url": url,
             "error": f"fetch failed: {result.error or result.status}",
             "progress": [fail("Fetch failed", result.error or result.status)],
             "hint": "Use browse_locate() to probe mode or browse_inspect() for bot-walls.",
@@ -667,7 +760,9 @@ async def extract_from_url(
         return res
     if not result.raw_html:
         res = {
-            "ok": False, "op": "browse_extract", "url": url,
+            "ok": False,
+            "op": "browse_extract",
+            "url": url,
             "error": "response is not HTML (JSON or binary content)",
             "progress": [fail("Not HTML", "cannot apply CSS/XPath to non-HTML response")],
             "hint": "This URL returns JSON/binary. Use browse_fetch() + query_select() instead.",
@@ -679,7 +774,10 @@ async def extract_from_url(
         ex = HtmlExtractor(result.raw_html, base_url=url)
     except RuntimeError as exc:
         res = {
-            "ok": False, "op": "browse_extract", "url": url, "error": str(exc),
+            "ok": False,
+            "op": "browse_extract",
+            "url": url,
+            "error": str(exc),
             "progress": [fail("Extractor unavailable", str(exc)[:80])],
             "hint": "Install lxml: pip install 'lxml>=4.9' 'cssselect>=1.2'",
         }
@@ -697,7 +795,9 @@ async def extract_from_url(
         extraction = ex.find_similar(text=selector, output_type=output_type, limit=cap)
     else:
         res = {
-            "ok": False, "op": "browse_extract", "url": url,
+            "ok": False,
+            "op": "browse_extract",
+            "url": url,
             "error": f"unknown mode: {mode!r}",
             "hint": "mode must be css|xpath|text|regex|similar",
             "progress": [fail("Unknown mode", mode)],
@@ -707,8 +807,12 @@ async def extract_from_url(
         return res
     if not extraction.ok:
         res = {
-            "ok": False, "op": "browse_extract", "url": url,
-            "selector": selector, "mode": mode, "error": extraction.error,
+            "ok": False,
+            "op": "browse_extract",
+            "url": url,
+            "selector": selector,
+            "mode": mode,
+            "error": extraction.error,
             "progress": [fail("Extraction failed", extraction.error or "")],
             "hint": f"Check {mode} selector syntax. Use browse_inspect() to preview the page.",
             "suggested_next": [next_step("browse_inspect", "preview page HTML structure")],
@@ -719,10 +823,16 @@ async def extract_from_url(
     if extraction.truncated:
         progress.append(warn("Truncated", f"showing {cap} of {extraction.count} matches"))
     res = {
-        "ok": True, "op": "browse_extract",
-        "url": url, "selector": selector, "mode": mode, "output_type": output_type,
-        "matches": extraction.matches, "count": extraction.count,
-        "truncated": extraction.truncated, "elapsed_ms": result.elapsed_ms,
+        "ok": True,
+        "op": "browse_extract",
+        "url": url,
+        "selector": selector,
+        "mode": mode,
+        "output_type": output_type,
+        "matches": extraction.matches,
+        "count": extraction.count,
+        "truncated": extraction.truncated,
+        "elapsed_ms": result.elapsed_ms,
         "progress": progress,
         "suggested_next": [
             next_step("browse_extract", "run another selector on this page"),
@@ -732,4 +842,3 @@ async def extract_from_url(
     }
     res["token_estimate"] = _tok(res)
     return res
-

@@ -1,4 +1,5 @@
 """Progress record helpers — pure dict constructors, zero I/O."""
+
 from __future__ import annotations
 
 

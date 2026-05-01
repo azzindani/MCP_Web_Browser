@@ -3,6 +3,7 @@
 Never writes to stdout — that stream is reserved for MCP stdio framing.
 DisplaySink is injectable so callers can be tested without patching sys.stderr.
 """
+
 from __future__ import annotations
 
 import sys

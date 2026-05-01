@@ -4,7 +4,7 @@ A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud A
 
 ## Features
 
-- **16 tools** across 3 tiers: basic (6), query (5), crawl (5)
+- **17 tools** across 3 tiers: basic (7), query (5), crawl (5)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for bounded, surgical web access
 - **Web search** — keyless: SearXNG → DuckDuckGo HTML → Brave HTML fallback chain
 - **HTTP / API fetch** — `httpx` + HTTP/2, TLS fingerprint impersonation via `curl_cffi`
@@ -82,7 +82,7 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
 ```
 
 4. Wait for the blue dot next to **mcp_web_browser**
-5. Start chatting — the model will see all 11 default tools (Basic + Query)
+5. Start chatting — the model will see all 12 default tools (Basic + Query)
 
 ### macOS / Linux
 
@@ -114,9 +114,9 @@ Replace the `"command"` and `"args"` with the bash equivalent:
 
 ## Available Tools
 
-Tiers are toggled by environment variable. Default-on: Basic + Query (11 tools, fits the 12-tool simultaneous ceiling). Crawl is off by default — enable it via `MCP_TIER_CRAWL=1` and disable Query if you need to stay under the cap.
+Tiers are toggled by environment variable. Default-on: Basic + Query (12 tools, at the 12-tool simultaneous ceiling). Crawl is off by default — enable it via `MCP_TIER_CRAWL=1` and disable Query if you need to stay under the cap.
 
-### Basic tier — `MCP_TIER_BASIC=1` (6 tools, default on)
+### Basic tier — `MCP_TIER_BASIC=1` (7 tools, default on)
 
 | Tool | Purpose |
 |---|---|
@@ -124,6 +124,7 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (11 tools, 
 | `browse_locate` | Probe a URL once, return detected mode + HTTP status. |
 | `browse_inspect` | Peek a URL: title + first ~500 chars. No DB write. |
 | `browse_fetch` | Fetch + index a URL. Returns surgical receipt. |
+| `browse_extract` | CSS / XPath / text / regex element extraction. |
 | `browse_verify` | Read one row from `pages` by URL. |
 | `browse_status` | Engine health: pools, circuit breaker, db stats. |
 
@@ -188,6 +189,12 @@ Search for recent papers on RAG retrieval techniques
 Fetch https://example.com/article and save it to the knowledge base
 ```
 
+### Extract structured data from a page
+
+```
+Fetch https://example.com/table and extract the first table using CSS selector "table.data"
+```
+
 ### Query the knowledge base
 
 ```
@@ -212,30 +219,30 @@ Resume the last crawl — it was interrupted at page 47
 
 ```
 MCP_Web_Browser/
-├── server.py            ← MCP entrypoint. THIN. One-liner tools only.
-├── mcp.json             ← Self-updating launcher (PowerShell / bash)
+├── server.py            <- MCP entrypoint. THIN. One-liner tools only.
+├── mcp.json             <- Self-updating launcher (PowerShell / bash)
 ├── pyproject.toml
-│
-├── engine/              ← Pure Python. ZERO `mcp.*` imports anywhere.
-│   ├── __init__.py      ← Public entry points called by server.py
-│   ├── core/            ← queue, router, scheduler, checkpoint, timer
-│   ├── workers/         ← http, browser, crawl, search, fingerprint, tls
-│   ├── resilience/      ← circuit_breaker, rate_limiter, retry
-│   ├── db/              ← schema, indexer, query (SQLite + FTS5, WAL)
-│   ├── output/          ← stream (JSONL), export (CSV/JSON), display
-│   └── config/          ← defaults, per-domain overrides
-│
-├── shared/              ← Cross-cutting helpers (no MCP imports)
-│   ├── platform_utils.py   ← is_constrained_mode(), get_max_rows()
-│   ├── path_safety.py      ← resolve_path()
-│   └── version_control.py  ← snapshot() / atomic_write_*
-│
+|
+├── engine/              <- Pure Python. ZERO `mcp.*` imports anywhere.
+|   ├── __init__.py      <- Public entry points called by server.py
+|   ├── core/            <- queue, router, scheduler, checkpoint, timer
+|   ├── workers/         <- http, browser, crawl, search, fingerprint, tls
+|   ├── resilience/      <- circuit_breaker, rate_limiter, retry
+|   ├── db/              <- schema, indexer, query (SQLite + FTS5, WAL)
+|   ├── output/          <- stream (JSONL), export (CSV/JSON), display
+|   └── config/          <- defaults, per-domain overrides
+|
+├── shared/              <- Cross-cutting helpers (no MCP imports)
+|   ├── platform_utils.py   <- is_constrained_mode(), get_max_rows()
+|   ├── path_safety.py      <- resolve_path()
+|   └── version_control.py  <- snapshot() / atomic_write_*
+|
 └── tests/
     ├── conftest.py
-    ├── unit/            ← 17 files; import engine directly, no MCP running
-    ├── integration/     ← hits real network (opt-in via MCP_BROWSER_TESTS=1)
-    ├── e2e/             ← full pipeline tests
-    └── smoke/           ← server round-trip tests
+    ├── unit/            <- import engine directly, no MCP running
+    ├── integration/     <- hits real network (opt-in via MCP_BROWSER_TESTS=1)
+    ├── e2e/             <- full pipeline tests
+    └── smoke/           <- server round-trip tests
 ```
 
 Tools are one-liners that delegate to engine functions. The engine never imports `mcp.*`, so every module is unit-testable without the SDK installed.
@@ -258,10 +265,10 @@ uv run ruff format engine/ shared/ server.py tests/
 uv run ruff check engine/ shared/ server.py tests/
 uv run pyright engine/ shared/ server.py
 uv run python tests/verify_tool_docstrings.py
-uv run pytest tests/unit -q --tb=short
+uv run pytest tests/ -q --tb=short
 
 # Run in constrained mode
-MCP_CONSTRAINED_MODE=1 uv run pytest tests/unit -q --tb=short
+MCP_CONSTRAINED_MODE=1 uv run pytest tests/ -q --tb=short
 ```
 
 The unit suite runs offline (mocked httpx, in-memory SQLite). Integration and e2e tests hit the real network and require `MCP_BROWSER_TESTS=1`.

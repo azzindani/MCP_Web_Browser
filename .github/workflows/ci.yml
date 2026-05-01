@@ -30,22 +30,23 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen
 
-      # ── Architecture compliance gates (Linux only — requires grep) ──
-      - name: Compliance gate — no `mcp` imports under engine/ or shared/
-        if: runner.os == 'Linux'
+      # ── Architecture compliance gates ──
+      - name: Compliance — no mcp imports in engine/ or shared/
+        shell: bash
         run: |
           if grep -rE "^(from|import)\s+mcp" engine/ shared/; then
             echo "::error::engine/** and shared/** must not import from mcp.*"
             exit 1
           fi
 
-      - name: Compliance gate — no stdout writes from engine/
-        if: runner.os == 'Linux'
+      - name: Compliance — no stdout writes from engine/
+        shell: bash
         run: |
           if grep -rnE "^\s*print\(" engine/ \
               | grep -v "engine/output/display.py" \
+              | grep -v "engine/cli.py" \
               | grep -v "file=sys.stderr"; then
-            echo "::error::stray print() in engine/** (must use display.py / stderr)"
+            echo "::error::stray print() in engine/** (use display.py / stderr)"
             exit 1
           fi
 
@@ -64,7 +65,7 @@ jobs:
 
       # ── Tests ──
       - name: Run tests
-        run: uv run pytest tests/unit -q --tb=short
+        run: uv run python -m pytest tests/ -q --tb=short
 
   # ── Constrained mode (8 GB VRAM target) ─────────────────────────────
   constrained:
@@ -87,4 +88,4 @@ jobs:
         run: uv sync --frozen
 
       - name: Run tests in constrained mode
-        run: uv run python -m pytest tests/unit -q --tb=short
+        run: uv run python -m pytest tests/ -q --tb=short

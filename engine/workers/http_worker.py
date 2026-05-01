@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -27,8 +27,10 @@ import httpx
 
 try:
     from curl_cffi.requests import AsyncSession as CurlSession
+
     _CURL_CFFI = True
 except ImportError:  # pragma: no cover
+    CurlSession: Any = None  # type: ignore[misc]
     _CURL_CFFI = False
 
 from engine.config.defaults import BOT_BODY_PATTERNS, DEFAULTS
@@ -58,9 +60,7 @@ _CURL_HEADERS: dict[str, str] = {
     ),
     "Accept-Encoding": "gzip, deflate, br",
     "Referer": "https://www.google.com/",  # stealthy: appear to come from search
-    "sec-ch-ua": (
-        '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-    ),
+    "sec-ch-ua": ('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
     "sec-ch-ua-mobile": "?0",
     "sec-ch-ua-platform": '"Windows"',
     "sec-fetch-dest": "document",
@@ -81,7 +81,7 @@ def _domain_of(url: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -97,11 +97,11 @@ class Task:
 class HttpResult:
     task: Task
     status: str  # "ok" | "error" | "blocked" | "skipped"
-    mode: str    # "http_json" | "http_curl"
+    mode: str  # "http_json" | "http_curl"
     url: str
     title: str = ""
     extracted: dict[str, Any] = field(default_factory=dict)
-    raw_html: str = ""   # populated for HTML responses; used by browse_extract
+    raw_html: str = ""  # populated for HTML responses; used by browse_extract
     links: list[str] = field(default_factory=list)
     elapsed_ms: int = 0
     error: str | None = None
@@ -124,11 +124,7 @@ def _parse_yahoo_chart(body: Any) -> dict[str, Any]:
         if change is None and price is not None and prev_close is not None:
             change = round(price - prev_close, 4)
         change_pct = meta.get("regularMarketChangePercent")
-        if (
-            change_pct is None
-            and price is not None
-            and prev_close not in (None, 0)
-        ):
+        if change_pct is None and price is not None and prev_close not in (None, 0):
             change_pct = round((price - prev_close) / prev_close * 100, 4)
         return {
             "price": price,
@@ -152,6 +148,7 @@ def _parse_html(body: str, url: str) -> tuple[dict[str, Any], str, list[str]]:
     """Extract title, visible text, and links from an HTML body using lxml."""
     try:
         from engine.workers.extractor import HtmlExtractor
+
         ex = HtmlExtractor(body, base_url=url)
         title = ex.get_title()
         text = ex.get_all_text()
@@ -190,7 +187,7 @@ class HttpWorker:
             headers=_BASE_HEADERS,
         )
 
-    async def _stealth_get(self, url: str, domain: str, timeout: float) -> tuple[int, str, str]:
+    async def _stealth_get(self, url: str, domain: str, timeout: float) -> tuple[int, str, str]:  # noqa: ASYNC109
         """Fetch with curl_cffi Chrome TLS impersonation; returns (status, text, content_type)."""
         async with CurlSession(impersonate=_CURL_IMPERSONATE) as session:
             resp = await session.get(
@@ -210,8 +207,13 @@ class HttpWorker:
 
         if not self._breaker.allow(domain):
             return HttpResult(
-                task=task, status="skipped", mode=mode, url=task.url,
-                error="circuit open", group=task.group, extracted_at=now,
+                task=task,
+                status="skipped",
+                mode=mode,
+                url=task.url,
+                error="circuit open",
+                group=task.group,
+                extracted_at=now,
             )
 
         await self._limiter.acquire(domain)
@@ -225,51 +227,75 @@ class HttpWorker:
                     lambda: self._stealth_get(task.url, domain, timeout),
                     max_retries=task.max_retries,
                 )
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self._breaker.failure(domain)
                 return HttpResult(
-                    task=task, status="error", mode=mode, url=task.url,
+                    task=task,
+                    status="error",
+                    mode=mode,
+                    url=task.url,
                     elapsed_ms=int((time.monotonic() - t0) * 1000),
-                    error=str(exc)[:100], group=task.group, extracted_at=now,
+                    error=str(exc)[:100],
+                    group=task.group,
+                    extracted_at=now,
                 )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             if status_code in BLOCKED_STATUS_CODES:
                 self._breaker.failure(domain)
                 return HttpResult(
-                    task=task, status="blocked", mode=mode, url=task.url,
+                    task=task,
+                    status="blocked",
+                    mode=mode,
+                    url=task.url,
                     elapsed_ms=elapsed_ms,
                     error=f"HTTP {status_code} (blocked)",
-                    group=task.group, extracted_at=now,
+                    group=task.group,
+                    extracted_at=now,
                 )
             if status_code >= 400:
                 self._breaker.failure(domain)
                 return HttpResult(
-                    task=task, status="error", mode=mode, url=task.url,
-                    elapsed_ms=elapsed_ms, error=f"HTTP {status_code}",
-                    group=task.group, extracted_at=now,
+                    task=task,
+                    status="error",
+                    mode=mode,
+                    url=task.url,
+                    elapsed_ms=elapsed_ms,
+                    error=f"HTTP {status_code}",
+                    group=task.group,
+                    extracted_at=now,
                 )
             if _is_botwall(text):
                 self._breaker.failure(domain)
                 return HttpResult(
-                    task=task, status="blocked", mode=mode, url=task.url,
+                    task=task,
+                    status="blocked",
+                    mode=mode,
+                    url=task.url,
                     elapsed_ms=elapsed_ms,
                     error="bot-wall detected in response body",
-                    group=task.group, extracted_at=now,
+                    group=task.group,
+                    extracted_at=now,
                 )
             self._breaker.success(domain)
             body: Any = text
             if "json" in ct or text.lstrip().startswith(("{", "[")):
                 try:
                     import json as _json
+
                     body = _json.loads(text)
                 except ValueError:
                     pass
             extracted, title, links = self._classify_payload(body, text, task)
             return HttpResult(
-                task=task, status="ok", mode=mode, url=task.url,
-                title=title, extracted=extracted,
+                task=task,
+                status="ok",
+                mode=mode,
+                url=task.url,
+                title=title,
+                extracted=extracted,
                 raw_html=text if isinstance(body, str) else "",
-                links=links, elapsed_ms=elapsed_ms,
+                links=links,
+                elapsed_ms=elapsed_ms,
                 group=task.group,
                 ticker=task.name if task.group == "Yahoo" else None,
                 extracted_at=now,
@@ -289,9 +315,14 @@ class HttpWorker:
         except httpx.HTTPError as exc:
             self._breaker.failure(domain)
             return HttpResult(
-                task=task, status="error", mode=mode, url=task.url,
+                task=task,
+                status="error",
+                mode=mode,
+                url=task.url,
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
-                error=str(exc)[:100], group=task.group, extracted_at=now,
+                error=str(exc)[:100],
+                group=task.group,
+                extracted_at=now,
             )
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -301,20 +332,28 @@ class HttpWorker:
         if status_code in BLOCKED_STATUS_CODES:
             self._breaker.failure(domain)
             return HttpResult(
-                task=task, status="blocked", mode=mode, url=task.url,
+                task=task,
+                status="blocked",
+                mode=mode,
+                url=task.url,
                 elapsed_ms=elapsed_ms,
                 error=f"HTTP {status_code} (blocked)",
-                group=task.group, extracted_at=now,
+                group=task.group,
+                extracted_at=now,
             )
 
         # Other 4xx / 5xx = hard error
         if status_code >= 400:
             self._breaker.failure(domain)
             return HttpResult(
-                task=task, status="error", mode=mode, url=task.url,
+                task=task,
+                status="error",
+                mode=mode,
+                url=task.url,
                 elapsed_ms=elapsed_ms,
                 error=f"HTTP {status_code}",
-                group=task.group, extracted_at=now,
+                group=task.group,
+                extracted_at=now,
             )
 
         body, text = self._parse_body(response)
@@ -322,10 +361,14 @@ class HttpWorker:
         if isinstance(text, str) and _is_botwall(text):
             self._breaker.failure(domain)
             return HttpResult(
-                task=task, status="blocked", mode=mode, url=task.url,
+                task=task,
+                status="blocked",
+                mode=mode,
+                url=task.url,
                 elapsed_ms=elapsed_ms,
                 error="bot-wall detected in response body",
-                group=task.group, extracted_at=now,
+                group=task.group,
+                extracted_at=now,
             )
 
         self._breaker.success(domain)
@@ -334,7 +377,10 @@ class HttpWorker:
         raw_html = text if isinstance(body, str) else ""
 
         return HttpResult(
-            task=task, status="ok", mode=mode, url=task.url,
+            task=task,
+            status="ok",
+            mode=mode,
+            url=task.url,
             title=title,
             extracted=extracted,
             raw_html=raw_html,

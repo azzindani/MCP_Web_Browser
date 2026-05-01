@@ -4,6 +4,7 @@ Mirrors output/stream.ts in krawl. Appends to an existing file so
 multiple runs accumulate in one stream. Line-buffered so data survives
 a SIGKILL between writes.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,7 +33,7 @@ class StreamWriter:
         except OSError:
             pass
 
-    def __enter__(self) -> "StreamWriter":
+    def __enter__(self) -> StreamWriter:
         return self
 
     def __exit__(self, *_: object) -> None:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 
@@ -31,9 +32,7 @@ def snapshot(path: str | os.PathLike[str]) -> Path | None:
 def atomic_write_bytes(path: str | os.PathLike[str], data: bytes) -> Path:
     target = resolve_path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=f".{target.name}.", suffix=".tmp", dir=target.parent
-    )
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
     tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -46,11 +45,14 @@ def atomic_write_bytes(path: str | os.PathLike[str], data: bytes) -> Path:
         raise
 
     # fsync the directory so the rename is durable across crashes.
-    dir_fd = os.open(target.parent, os.O_RDONLY)
-    try:
-        os.fsync(dir_fd)
-    finally:
-        os.close(dir_fd)
+    # Windows does not support opening directories with os.open(); NTFS
+    # provides equivalent guarantees without an explicit dir fsync.
+    if sys.platform != "win32":
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
     return target
 
 
