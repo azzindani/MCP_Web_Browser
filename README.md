@@ -4,7 +4,7 @@ A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud A
 
 ## Features
 
-- **17 tools** across 3 tiers: basic (7), query (5), crawl (5)
+- **18 tools** across 3 tiers: basic (8), query (5), crawl (5)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for bounded, surgical web access
 - **Web search** — keyless: SearXNG → DuckDuckGo HTML → Brave HTML fallback chain
 - **HTTP / API fetch** — `httpx` + HTTP/2, TLS fingerprint impersonation via `curl_cffi`
@@ -82,7 +82,7 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
 ```
 
 4. Wait for the blue dot next to **mcp_web_browser**
-5. Start chatting — the model will see all 12 default tools (Basic + Query)
+5. Start chatting — the model will see all 13 default tools (Basic + Query)
 
 ### macOS / Linux
 
@@ -114,9 +114,9 @@ Replace the `"command"` and `"args"` with the bash equivalent:
 
 ## Available Tools
 
-Tiers are toggled by environment variable. Default-on: Basic + Query (12 tools, at the 12-tool simultaneous ceiling). Crawl is off by default — enable it via `MCP_TIER_CRAWL=1` and disable Query if you need to stay under the cap.
+Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools). Crawl is off by default. On constrained hosts with a strict 12-tool ceiling, disable Query (`MCP_TIER_QUERY=0`) or Crawl to stay under the cap.
 
-### Basic tier — `MCP_TIER_BASIC=1` (7 tools, default on)
+### Basic tier — `MCP_TIER_BASIC=1` (8 tools, default on)
 
 | Tool | Purpose |
 |---|---|
@@ -127,6 +127,7 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (12 tools, 
 | `browse_extract` | CSS / XPath / text / regex element extraction. |
 | `browse_verify` | Read one row from `pages` by URL. |
 | `browse_status` | Engine health: pools, circuit breaker, db stats. |
+| `browse_datetime` | Current date, time, day-of-week, and timezone. |
 
 ### Query tier — `MCP_TIER_QUERY=1` (5 tools, default on)
 

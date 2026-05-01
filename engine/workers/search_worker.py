@@ -28,8 +28,22 @@ from engine.resilience.retry import with_retry
 from shared.platform_utils import get_max_results
 
 _SEARXNG_URL: Final[str] = os.environ.get("MCP_SEARCH_BACKEND", "http://127.0.0.1:8888")
-_DDG_URL: Final[str] = "https://html.duckduckgo.com/html/"
+_DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
+
+# Shorter timeout for search — we fail fast and try the next backend.
+_SEARCH_TIMEOUT: Final[float] = 8.0
+
+# Browser-like headers that help DDG / Brave serve results instead of CAPTCHAs.
+_SEARCH_HEADERS: Final[dict[str, str]] = {
+    "User-Agent": DEFAULTS.USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br",
+    "DNT": "1",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 
 @dataclass(slots=True)
@@ -64,9 +78,13 @@ def _domain_of(url: str) -> str:
 
 # ── Body parsers (no HTML library; surgical regex on bounded chunks) ──
 
-_DDG_RESULT_RE = re.compile(
-    r'<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>(.*?)</a>'
-    r'.*?<a[^>]+class="result__snippet"[^>]*>(.*?)</a>',
+# DDG Lite: result links and snippets appear in paired <td> rows.
+_DDG_LITE_LINK_RE = re.compile(
+    r'<td[^>]+class="result-link"[^>]*>.*?<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
+    re.DOTALL,
+)
+_DDG_LITE_SNIPPET_RE = re.compile(
+    r'<td[^>]+class="result-snippet"[^>]*>(.*?)</td>',
     re.DOTALL,
 )
 
@@ -98,12 +116,13 @@ def _resolve_ddg_redirect(href: str) -> str:
     return href
 
 
-def _parse_ddg(body: str, cap: int) -> list[SearchHit]:
+def _parse_ddg_lite(body: str, cap: int) -> list[SearchHit]:
+    links = _DDG_LITE_LINK_RE.findall(body)
+    snippets = [m.group(1) for m in _DDG_LITE_SNIPPET_RE.finditer(body)]
     hits: list[SearchHit] = []
-    for match in _DDG_RESULT_RE.finditer(body):
+    for (href, raw_title), raw_snippet in zip(links, snippets):
         if len(hits) >= cap:
             break
-        href, raw_title, raw_snippet = match.groups()
         url = _resolve_ddg_redirect(unescape(href))
         if not url.startswith("http"):
             continue
@@ -196,7 +215,7 @@ class SearchWorker:
                 lambda: self._client.get(
                     url,
                     params={"q": query, "format": "json", "safesearch": "0"},
-                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                    timeout=_SEARCH_TIMEOUT,
                 ),
                 max_retries=2,
             )
@@ -228,16 +247,17 @@ class SearchWorker:
         return hits
 
     async def _ddg(self, query: str, cap: int) -> list[SearchHit]:
-        domain = "html.duckduckgo.com"
+        domain = "lite.duckduckgo.com"
         if not self._breaker.allow(domain):
             return []
         await self._limiter.acquire(domain)
         try:
             response = await with_retry(
-                lambda: self._client.post(
-                    _DDG_URL,
-                    data={"q": query},
-                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                lambda: self._client.get(
+                    _DDG_LITE_URL,
+                    params={"q": query},
+                    headers=_SEARCH_HEADERS,
+                    timeout=_SEARCH_TIMEOUT,
                 ),
                 max_retries=2,
             )
@@ -248,7 +268,7 @@ class SearchWorker:
             self._breaker.failure(domain)
             return []
         self._breaker.success(domain)
-        return _parse_ddg(response.text, cap)
+        return _parse_ddg_lite(response.text, cap)
 
     async def _brave(self, query: str, cap: int) -> list[SearchHit]:
         domain = "search.brave.com"
@@ -260,7 +280,8 @@ class SearchWorker:
                 lambda: self._client.get(
                     _BRAVE_URL,
                     params={"q": query, "source": "web"},
-                    timeout=DEFAULTS.HTTP_TIMEOUT,
+                    headers={**_SEARCH_HEADERS, "Referer": "https://www.google.com/"},
+                    timeout=_SEARCH_TIMEOUT,
                 ),
                 max_retries=2,
             )

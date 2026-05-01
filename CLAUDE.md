@@ -165,13 +165,13 @@ in the public surface. Compose two existing tools instead.
 
 | Tier (env-toggled)              | Tools | Default |
 |---------------------------------|-------|---------|
-| `mcp_web_browser_basic`         | 7     | on      |
+| `mcp_web_browser_basic`         | 8     | on      |
 | `mcp_web_browser_query`         | 5     | on      |
 | `mcp_web_browser_crawl`         | 5     | off     |
 
-Never enable all three tiers at once on a constrained machine — that
-breaks the 12-tool ceiling once the host (LM Studio etc.) adds its own
-built-ins.
+Basic + Query = 13 tools. On constrained hosts with a hard 12-tool
+ceiling, disable Query (`MCP_TIER_QUERY=0`) to stay under the cap.
+Never enable all three tiers at once.
 
 ### 4.3 Tool schema discipline
 
@@ -277,6 +277,7 @@ built-ins.
 | basic   | `browse_extract` | PATCH    | [x]    |
 | basic   | `browse_verify`  | VERIFY   | [x]    |
 | basic   | `browse_status`  | aux      | [x]    |
+| basic   | `browse_datetime`| aux      | [x]    |
 | query   | `query_locate`   | LOCATE   | [x]    |
 | query   | `query_search`   | INSPECT  | [x]    |
 | query   | `query_select`   | INSPECT  | [x]    |

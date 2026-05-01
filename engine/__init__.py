@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+import zoneinfo
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -106,6 +108,30 @@ def reset_runtime() -> None:
 
 
 # ── Browse tier ────────────────────────────────────────────────────────────
+
+
+def get_datetime() -> dict[str, Any]:
+    utc_now = datetime.now(UTC)
+    try:
+        tz = zoneinfo.ZoneInfo(DEFAULTS.TIMEZONE)
+        local_now = datetime.now(tz)
+    except zoneinfo.ZoneInfoNotFoundError:
+        local_now = utc_now
+    date_str = local_now.strftime("%Y-%m-%d")
+    return {
+        "ok": True,
+        "op": "browse_datetime",
+        "utc_iso": utc_now.isoformat(timespec="seconds"),
+        "local_iso": local_now.isoformat(timespec="seconds"),
+        "date": date_str,
+        "time": local_now.strftime("%H:%M:%S"),
+        "day_of_week": local_now.strftime("%A"),
+        "year": local_now.year,
+        "month": local_now.month,
+        "timezone": DEFAULTS.TIMEZONE,
+        "hint": f"Today is {local_now.strftime('%A')}, {date_str}. Use this for date-aware queries.",
+        "token_estimate": 60,
+    }
 
 
 async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:

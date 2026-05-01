@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+## [0.1.2] — 2026-05-01
+
+### New: `browse_datetime` tool — current date and time context
+
+Adds a lightweight tool to the Basic tier that returns the current date,
+time, day of week, and configured timezone. Lets the model formulate
+date-aware queries ("best sectors to invest in 2025") without guessing
+the current year.
+
+```json
+{
+  "date": "2026-05-01",
+  "day_of_week": "Thursday",
+  "time": "14:30:00",
+  "timezone": "Asia/Jakarta",
+  "hint": "Today is Thursday, 2026-05-01. Use this for date-aware queries."
+}
+```
+
+### Fix: `browse_search` — all backends failing
+
+- **DDG**: switched from `html.duckduckgo.com/html/` (POST, unreliable,
+  bot-blocked) to `lite.duckduckgo.com/lite/` (GET, more stable, simpler HTML)
+- **All backends**: added browser-like request headers (`Accept`, `Accept-Language: en-US`,
+  `Accept-Encoding`, `DNT`, `Upgrade-Insecure-Requests`) — prevents CAPTCHA / bot walls
+- **Timeout**: reduced per-backend timeout from 15 s → 8 s so the fallback
+  chain (SearXNG → DDG → Brave) completes in ~16 s worst case instead of ~45 s
+
+---
+
 ## [0.1.1] — 2026-05-01
 
 ### New: `browse_extract` tool — structured element extraction (Basic tier)

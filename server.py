@@ -2,7 +2,7 @@
 
 Tiers (each toggled by env var, default-on except crawl):
 
-    MCP_TIER_BASIC=1   →  browse_*        (6 tools)
+    MCP_TIER_BASIC=1   →  browse_*        (8 tools)
     MCP_TIER_QUERY=1   →  query_*         (5 tools)
     MCP_TIER_CRAWL=0   →  crawl_*         (5 tools, off by default)
 
@@ -60,6 +60,11 @@ if _enabled("MCP_TIER_BASIC", "1"):
     def browse_status() -> dict[str, Any]:
         """Engine health: pools, breaker, db."""
         return engine.engine_status()
+
+    @app.tool()
+    def browse_datetime() -> dict[str, Any]:
+        """Current date, time, day-of-week, and timezone."""
+        return engine.get_datetime()
 
     @app.tool()
     async def browse_extract(
