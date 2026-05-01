@@ -87,6 +87,11 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
 
 > To enable deep research (`browse_research`) add `"MCP_TIER_CRAWL": "1"` to the `env` block.
 
+> **If web search returns no results:** the browser fallback (Google/DDG via Chromium) requires the Playwright headless shell. Run this once in PowerShell if you skipped the pre-install step:
+> ```powershell
+> uv run --project "$env:USERPROFILE\.mcp_servers\MCP_Web_Browser" playwright install chromium chromium-headless-shell
+> ```
+
 ### macOS / Linux
 
 Replace the `"command"` and `"args"` with the bash equivalent:
@@ -112,6 +117,11 @@ Replace the `"command"` and `"args"` with the bash equivalent:
   }
 }
 ```
+
+> **If web search returns no results:** run this once in your terminal if you skipped the pre-install step:
+> ```bash
+> uv run --project "$HOME/.mcp_servers/MCP_Web_Browser" playwright install chromium chromium-headless-shell
+> ```
 
 ---
 
