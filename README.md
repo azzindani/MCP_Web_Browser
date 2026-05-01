@@ -47,7 +47,7 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
 > $d = Join-Path $env:USERPROFILE '.mcp_servers\MCP_Web_Browser'
 > $g = Join-Path $d '.git'
 > if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Web_Browser.git $d --quiet }
-> Set-Location $d; uv sync; uv run playwright install chromium
+> Set-Location $d; uv sync; uv run playwright install chromium chromium-headless-shell
 > ```
 > If you skip this step and LM Studio times out, press **Restart** in the MCP Servers panel.
 
@@ -67,7 +67,7 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Web_Browser'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Web_Browser.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location $d; uv sync --quiet; uv run playwright install chromium --quiet; uv run python server.py"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Web_Browser'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Web_Browser.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location $d; uv sync --quiet; uv run playwright install chromium chromium-headless-shell --quiet; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0",
@@ -98,7 +98,7 @@ Replace the `"command"` and `"args"` with the bash equivalent:
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Web_Browser\"; if [ ! -d \"$d/.git\" ]; then rm -rf \"$d\"; git clone https://github.com/azzindani/MCP_Web_Browser.git \"$d\" --quiet; else cd \"$d\" && git fetch origin --quiet && git reset --hard FETCH_HEAD --quiet; fi; cd \"$d\"; uv sync --quiet; uv run playwright install chromium --quiet; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Web_Browser\"; if [ ! -d \"$d/.git\" ]; then rm -rf \"$d\"; git clone https://github.com/azzindani/MCP_Web_Browser.git \"$d\" --quiet; else cd \"$d\" && git fetch origin --quiet && git reset --hard FETCH_HEAD --quiet; fi; cd \"$d\"; uv sync --quiet; uv run playwright install chromium chromium-headless-shell --quiet; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0",
@@ -282,7 +282,7 @@ cd MCP_Web_Browser
 uv sync
 
 # Install Playwright Chromium (required for browser_worker tests)
-uv run playwright install chromium
+uv run playwright install chromium chromium-headless-shell
 
 # Full CI sequence — run in order before every commit
 uv run ruff format engine/ shared/ server.py tests/

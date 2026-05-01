@@ -111,7 +111,7 @@ _DDG_LITE_SNIPPET_RE = re.compile(
 
 _BING_RESULT_RE = re.compile(
     r'<li[^>]+class="b_algo[^"]*"[^>]*>.*?'
-    r'<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
+    r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
     r'(?:<p[^>]*>(.*?)</p>|<div[^>]+class="b_caption[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>)',
     re.DOTALL,
 )
@@ -125,6 +125,25 @@ _BRAVE_RESULT_RE = re.compile(
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
+
+# ISP block / captive portal titles — fail fast instead of trying to parse.
+_BLOCK_PAGE_TITLES = (
+    "internet positif",
+    "access denied",
+    "blocked",
+    "attention required",
+    "just a moment",
+    "ddos-guard",
+    "security check",
+    "captcha",
+    "robot check",
+)
+
+
+def _is_block_page(body: str) -> bool:
+    """Return True if the response looks like an ISP block or bot-check page."""
+    head = body[:600].lower()
+    return any(t in head for t in _BLOCK_PAGE_TITLES)
 
 
 def _strip_tags(s: str) -> str:
@@ -369,6 +388,9 @@ class SearchWorker:
         if status >= 400:
             self._breaker.failure(domain)
             raise RuntimeError(f"HTTP {status}")
+        if _is_block_page(body):
+            self._breaker.failure(domain)
+            raise RuntimeError("ISP/bot block page detected")
         self._breaker.success(domain)
         hits = _parse_bing(body, cap)
         if not hits:
@@ -396,10 +418,12 @@ class SearchWorker:
         if status >= 400:
             self._breaker.failure(domain)
             raise RuntimeError(f"HTTP {status}")
+        if _is_block_page(body):
+            self._breaker.failure(domain)
+            raise RuntimeError("ISP/bot block page detected")
         self._breaker.success(domain)
         hits = _parse_ddg_lite(body, cap)
         if not hits:
-            # surface a snippet so we can diagnose CAPTCHA/empty pages
             raise RuntimeError(f"no results parsed; body[0:300]={body[:300]!r}")
         return hits
 
@@ -425,6 +449,9 @@ class SearchWorker:
         if status >= 400:
             self._breaker.failure(domain)
             raise RuntimeError(f"HTTP {status}")
+        if _is_block_page(body):
+            self._breaker.failure(domain)
+            raise RuntimeError("ISP/bot block page detected")
         self._breaker.success(domain)
         return _parse_brave(body, cap)
 
