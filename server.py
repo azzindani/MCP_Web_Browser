@@ -13,29 +13,14 @@ logic lives in engine/**; this file only validates and dispatches.
 
 from __future__ import annotations
 
-import asyncio
 import os
-from contextlib import asynccontextmanager
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
 import engine
 
-
-@asynccontextmanager
-async def _lifespan(server: FastMCP):  # type: ignore[type-arg]
-    # Pre-warm Chromium in the background so browser search is ready
-    # before the first tool call arrives, not after HTTP backends fail.
-    _warmup = asyncio.create_task(engine.warmup_browser())
-    try:
-        yield
-    finally:
-        _warmup.cancel()
-        await engine.shutdown()
-
-
-app: FastMCP = FastMCP("mcp_web_browser", lifespan=_lifespan)
+app: FastMCP = FastMCP("mcp_web_browser")
 
 
 def _enabled(name: str, default: str) -> bool:

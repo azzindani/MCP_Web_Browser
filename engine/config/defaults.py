@@ -68,6 +68,9 @@ class DEFAULTS:
         "--disable-background-timer-throttling",
         "--disable-renderer-backgrounding",
         "--disable-features=TranslateUI",
+        "--log-level=3",
+        "--disable-logging",
+        "--silent",
     )
 
     COLLECTIBLE_EXTENSIONS: Final[tuple[str, ...]] = (

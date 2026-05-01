@@ -40,6 +40,7 @@ from shared.platform_utils import get_max_results
 _CURL_IMPERSONATE = "chrome120"
 
 _SEARXNG_URL: Final[str] = os.environ.get("MCP_SEARCH_BACKEND", "http://127.0.0.1:8888")
+_BING_URL: Final[str] = "https://www.bing.com/search"
 _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
@@ -101,6 +102,13 @@ _DDG_LITE_SNIPPET_RE = re.compile(
     re.DOTALL,
 )
 
+_BING_RESULT_RE = re.compile(
+    r'<li[^>]+class="b_algo"[^>]*>.*?'
+    r'<h2[^>]*><a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
+    r'(?:<p[^>]*>(.*?)</p>|<div[^>]+class="b_caption[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>)',
+    re.DOTALL,
+)
+
 _BRAVE_RESULT_RE = re.compile(
     r'<div[^>]+data-type="web"[^>]*>.*?'
     r'<a[^>]+href="(https?://[^"]+)"[^>]*>.*?'
@@ -145,6 +153,27 @@ def _parse_ddg_lite(body: str, cap: int) -> list[SearchHit]:
                 url=url,
                 snippet=_strip_tags(raw_snippet),
                 backend="ddg",
+            )
+        )
+    return hits
+
+
+def _parse_bing(body: str, cap: int) -> list[SearchHit]:
+    hits: list[SearchHit] = []
+    for match in _BING_RESULT_RE.finditer(body):
+        if len(hits) >= cap:
+            break
+        href = unescape(match.group(1))
+        raw_title = match.group(2)
+        raw_snippet = match.group(3) or match.group(4) or ""
+        if not href.startswith("http"):
+            continue
+        hits.append(
+            SearchHit(
+                title=_strip_tags(raw_title),
+                url=href,
+                snippet=_strip_tags(raw_snippet),
+                backend="bing",
             )
         )
     return hits
@@ -198,7 +227,7 @@ class SearchWorker:
         cap = limit if limit is not None else get_max_results()
         t0 = time.monotonic()
         errors: list[str] = []
-        for backend in ("searxng", "ddg", "brave"):
+        for backend in ("searxng", "bing", "ddg", "brave"):
             hits, err = await self._try_backend(backend, query, cap)
             if err:
                 errors.append(f"{backend}: {err}")
@@ -228,6 +257,8 @@ class SearchWorker:
         try:
             if backend == "searxng":
                 hits = await self._searxng(query, cap)
+            elif backend == "bing":
+                hits = await self._bing(query, cap)
             elif backend == "ddg":
                 hits = await self._ddg(query, cap)
             elif backend == "brave":
@@ -270,6 +301,36 @@ class SearchWorker:
                     backend="searxng",
                 )
             )
+        return hits
+
+    async def _bing(self, query: str, cap: int) -> list[SearchHit]:
+        domain = "www.bing.com"
+        if not self._breaker.allow(domain):
+            raise RuntimeError(f"{domain} circuit open")
+        await self._limiter.acquire(domain)
+        bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.google.com/", "Accept-Language": "en-US,en;q=0.9"}
+        if _CURL_CFFI:
+            status, body = await _curl_search_get(
+                _BING_URL, {"q": query, "count": str(cap), "setlang": "en"}, bing_headers
+            )
+        else:
+            response = await with_retry(
+                lambda: self._client.get(
+                    _BING_URL,
+                    params={"q": query, "count": str(cap), "setlang": "en"},
+                    headers=bing_headers,
+                    timeout=_SEARCH_TIMEOUT,
+                ),
+                max_retries=2,
+            )
+            status, body = response.status_code, response.text
+        if status >= 400:
+            self._breaker.failure(domain)
+            raise RuntimeError(f"HTTP {status}")
+        self._breaker.success(domain)
+        hits = _parse_bing(body, cap)
+        if not hits:
+            raise RuntimeError(f"no results parsed; body[0:300]={body[:300]!r}")
         return hits
 
     async def _ddg(self, query: str, cap: int) -> list[SearchHit]:
