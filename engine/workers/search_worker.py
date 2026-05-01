@@ -294,7 +294,11 @@ class SearchWorker:
             self._breaker.failure(domain)
             raise RuntimeError(f"HTTP {status}")
         self._breaker.success(domain)
-        return _parse_ddg_lite(body, cap)
+        hits = _parse_ddg_lite(body, cap)
+        if not hits:
+            # surface a snippet so we can diagnose CAPTCHA/empty pages
+            raise RuntimeError(f"no results parsed; body[0:300]={body[:300]!r}")
+        return hits
 
     async def _brave(self, query: str, cap: int) -> list[SearchHit]:
         domain = "search.brave.com"

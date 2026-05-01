@@ -94,6 +94,11 @@ class _Runtime:
 
 _RT: _Runtime | None = None
 
+# Per-query failure counter — reset when the server restarts.
+# Prevents models from looping the same failing query indefinitely.
+_SEARCH_FAIL_COUNTS: dict[str, int] = {}
+_SEARCH_FAIL_LIMIT = 2
+
 
 def runtime() -> _Runtime:
     global _RT
@@ -135,6 +140,23 @@ def get_datetime() -> dict[str, Any]:
 
 
 async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
+    # Hard loop-breaker: return terminal error after _SEARCH_FAIL_LIMIT consecutive
+    # failures for the same query so models cannot spin indefinitely.
+    query_key = query.lower().strip()
+    if _SEARCH_FAIL_COUNTS.get(query_key, 0) >= _SEARCH_FAIL_LIMIT:
+        _SEARCH_FAIL_COUNTS.pop(query_key, None)
+        return {
+            "ok": False,
+            "op": "browse_search_exhausted",
+            "error": "search_exhausted",
+            "query": query,
+            "hint": (
+                f"browse_search has already failed {_SEARCH_FAIL_LIMIT} times for this query. "
+                "Web search is unavailable. Answer from your training data instead. "
+                "Do NOT call browse_search again."
+            ),
+        }
+
     rt = runtime()
     result = await rt.search_worker().search(query, limit=limit)
     success = result.backend != "none"
@@ -166,6 +188,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
+        _SEARCH_FAIL_COUNTS[query_key] = _SEARCH_FAIL_COUNTS.get(query_key, 0) + 1
         res["backend_errors"] = result.errors
         res["do_not_retry"] = True
         res["hint"] = (
@@ -174,6 +197,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         )
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
+        _SEARCH_FAIL_COUNTS.pop(query_key, None)
         res["suggested_next"] = [
             next_step("browse_fetch", "fetch and index a result URL"),
             next_step("browse_inspect", "preview a result URL before indexing"),
