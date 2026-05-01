@@ -1019,26 +1019,21 @@ async def research_topic(
 
     # ── Step 1: search ────────────────────────────────────────────────────────
     search_result = await rt.search_worker().search(query, limit=cap)
-    if search_result.backend == "none":
-        bw = None
+    if search_result.backend == "none" and rt._browser_worker is not None:
+        # Only use browser if already warm — launching cold adds 30-50 s and
+        # causes LM Studio to close the WebSocket before the tool returns.
         try:
-            bw = await asyncio.wait_for(rt.browser_search_worker(), timeout=30.0)
-        except TimeoutError:
-            errors.append("browser_launch: timed out after 30s")
+            bw = rt._browser_worker
+            raw = await asyncio.wait_for(bw.search_google(query, cap), timeout=20.0)
+            if raw:
+                search_result.hits = [
+                    SearchHit(title=h["title"], url=h["url"], snippet=h["snippet"], backend="browser_google")
+                    for h in raw
+                ]
+                search_result.backend = "browser_google"
+                search_result.total = len(raw)
         except Exception as exc:  # noqa: BLE001
-            errors.append(f"browser_launch: {type(exc).__name__}: {exc}")
-        if bw is not None:
-            try:
-                raw = await asyncio.wait_for(bw.search_google(query, cap), timeout=20.0)
-                if raw:
-                    search_result.hits = [
-                        SearchHit(title=h["title"], url=h["url"], snippet=h["snippet"], backend="browser_google")
-                        for h in raw
-                    ]
-                    search_result.backend = "browser_google"
-                    search_result.total = len(raw)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"browser_fallback: {type(exc).__name__}: {exc}")
+            errors.append(f"browser_fallback: {type(exc).__name__}: {exc}")
 
     if not search_result.hits:
         no_results: dict[str, Any] = {
