@@ -19,9 +19,10 @@ from engine.db.query import STATS_TABLES, QueryEngine
 from engine.db.schema import init_schema
 from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
+from engine.workers.browser_worker import BrowserTask, BrowserWorker
 from engine.workers.crawl_worker import CrawlTask, CrawlWorker
 from engine.workers.http_worker import HttpWorker, Task
-from engine.workers.search_worker import SearchWorker
+from engine.workers.search_worker import SearchHit, SearchWorker
 from shared.handover import next_step
 from shared.path_safety import resolve_path
 from shared.platform_utils import (
@@ -43,6 +44,7 @@ def _tok(d: Any) -> int:
 class _Runtime:
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
+        self._browser_worker: BrowserWorker | None = None
         self._breaker = CircuitBreaker()
         self._limiter = RateLimiter()
         self._db: sqlite3.Connection | None = None
@@ -57,6 +59,11 @@ class _Runtime:
 
     def search_worker(self) -> SearchWorker:
         return SearchWorker(self.http_client(), self._breaker, self._limiter)
+
+    async def browser_search_worker(self) -> BrowserWorker:
+        if self._browser_worker is None:
+            self._browser_worker = await BrowserWorker.launch(self._breaker, self._limiter)
+        return self._browser_worker
 
     def db(self) -> sqlite3.Connection:
         if self._db is None:
@@ -78,6 +85,9 @@ class _Runtime:
         if self._client is not None:
             await self._client.aclose()
             self._client = None
+        if self._browser_worker is not None:
+            await self._browser_worker.close()
+            self._browser_worker = None
         if self._db is not None:
             self._db.close()
             self._db = None
@@ -188,8 +198,32 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
+        # Browser fallback: launch Playwright + DDG when all HTTP backends fail.
+        browser_error: str | None = None
+        try:
+            bw = await rt.browser_search_worker()
+            raw_hits = await bw.search(query, get_max_results() if limit is None else limit)
+            if raw_hits:
+                res["ok"] = True
+                res["backend"] = "browser_ddg"
+                res["hits"] = [
+                    {"title": h["title"], "url": h["url"], "snippet": h["snippet"][:200], "backend": "browser_ddg"}
+                    for h in raw_hits
+                ]
+                res["total"] = len(raw_hits)
+                res["suggested_next"] = [
+                    next_step("browse_fetch", "fetch and index a result URL"),
+                    next_step("browse_inspect", "preview a result URL before indexing"),
+                ]
+                res["carry_forward"] = {"urls": [h["url"] for h in raw_hits[:3]]}
+                _SEARCH_FAIL_COUNTS.pop(query_key, None)
+                res["token_estimate"] = _tok(res)
+                return res
+        except Exception as exc:  # noqa: BLE001
+            browser_error = f"browser_ddg: {type(exc).__name__}: {exc}"
+
         _SEARCH_FAIL_COUNTS[query_key] = _SEARCH_FAIL_COUNTS.get(query_key, 0) + 1
-        res["backend_errors"] = result.errors
+        res["backend_errors"] = result.errors + ([browser_error] if browser_error else [])
         res["do_not_retry"] = True
         res["hint"] = (
             "All search backends failed. STOP — do not call browse_search again. "

@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import quote_plus, urlparse
 
 from engine.config.defaults import DEFAULTS
 from engine.config.domains import DOMAIN_CONFIG
@@ -318,6 +318,38 @@ _EVAL_LINKS = """
 """
 
 
+# DDG search result extraction — multiple selector fallbacks for different page versions.
+_EVAL_DDG_SEARCH = """
+(cap) => {
+  const hits = [];
+  const containers = document.querySelectorAll(
+    'article[data-testid="result"], [data-testid="result"], .result, li.b_algo'
+  );
+  for (const el of Array.from(containers)) {
+    if (hits.length >= cap) break;
+    const aEl = (
+      el.querySelector('[data-testid="result-title-a"]') ||
+      el.querySelector('h2 a') ||
+      el.querySelector('a.result__a') ||
+      el.querySelector('a[href^="http"]')
+    );
+    const snipEl = (
+      el.querySelector('[data-result="snippet"]') ||
+      el.querySelector('.result__snippet') ||
+      el.querySelector('[class*="snippet"]') ||
+      el.querySelector('p')
+    );
+    const title = (aEl?.innerText || aEl?.textContent || '').trim();
+    const href = aEl?.href || '';
+    const snippet = (snipEl?.innerText || snipEl?.textContent || '').trim().slice(0, 300);
+    if (title.length > 2 && href.startsWith('http') && !href.includes('duckduckgo.com')) {
+      hits.push({ title, url: href, snippet });
+    }
+  }
+  return hits;
+}
+"""
+
 _OVERLAY_CLICK_SELECTORS = (
     "button[name='agree']",
     "#onetrust-accept-btn-handler",
@@ -516,3 +548,34 @@ class BrowserWorker:
             return await page.evaluate(eval_js)
         except Exception:
             return {}
+
+    async def search(self, query: str, cap: int) -> list[dict[str, str]]:
+        """Search DuckDuckGo via real browser. Returns list of {title, url, snippet}."""
+        domain = "duckduckgo.com"
+        if not self._breaker.allow(domain):
+            raise RuntimeError(f"{domain} circuit open")
+        await self._limiter.acquire(domain)
+
+        search_url = f"https://duckduckgo.com/?q={quote_plus(query)}&ia=web"
+        context = await self._make_context()
+        page = await context.new_page()
+        await page.add_init_script(build_stealth_script(self._profile))
+        try:
+            await page.goto(search_url, wait_until="domcontentloaded", timeout=20_000)
+            # wait for at least one result link to appear
+            try:
+                await page.wait_for_selector("article, [data-testid='result'], .result", timeout=8_000)
+            except Exception:
+                pass
+            hits: list[dict[str, str]] = await page.evaluate(_EVAL_DDG_SEARCH, cap)
+            await context.close()
+            if hits:
+                self._breaker.success(domain)
+            return hits
+        except Exception as exc:
+            try:
+                await context.close()
+            except Exception:  # noqa: S110
+                pass
+            self._breaker.failure(domain)
+            raise RuntimeError(str(exc)[:200]) from exc
