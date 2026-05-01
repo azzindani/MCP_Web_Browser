@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sqlite3
 import time
@@ -168,6 +169,17 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         }
 
     rt = runtime()
+
+    # Pre-warm Chromium in the background while HTTP backends are tried.
+    # By the time they all fail (~4-8s), the browser is already launching.
+    async def _warm() -> BrowserWorker | None:
+        try:
+            return await rt.browser_search_worker()
+        except Exception:  # noqa: BLE001
+            return None
+
+    _browser_task: asyncio.Task[BrowserWorker | None] = asyncio.create_task(_warm())
+
     result = await rt.search_worker().search(query, limit=limit)
     success = result.backend != "none"
     progress = [
@@ -198,14 +210,12 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        # Browser fallback: try Google then DDG via Playwright stealth Chromium.
+        # Browser fallback: use the pre-warmed browser task (running since the
+        # HTTP backends started), then try Google first, DDG second.
+        _BROWSER_SEARCH_TIMEOUT = 20.0  # per-engine cap so total stays under 45s
         cap = get_max_results() if limit is None else limit
         browser_errors: list[str] = []
-        try:
-            bw = await rt.browser_search_worker()
-        except Exception as exc:  # noqa: BLE001
-            browser_errors.append(f"browser_launch: {type(exc).__name__}: {exc}"[:120])
-            bw = None
+        bw = await _browser_task  # already mostly warm by now
         for engine_name, search_fn in (
             ("browser_google", bw.search_google if bw else None),
             ("browser_ddg", bw.search_ddg if bw else None),
@@ -213,7 +223,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
             if search_fn is None:
                 continue
             try:
-                raw_hits = await search_fn(query, cap)
+                raw_hits = await asyncio.wait_for(search_fn(query, cap), timeout=_BROWSER_SEARCH_TIMEOUT)
                 if raw_hits:
                     res["ok"] = True
                     res["backend"] = engine_name
@@ -231,6 +241,8 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
                     _SEARCH_FAIL_COUNTS.pop(query_key, None)
                     res["token_estimate"] = _tok(res)
                     return res
+            except TimeoutError:
+                browser_errors.append(f"{engine_name}: timeout after {_BROWSER_SEARCH_TIMEOUT}s")
             except Exception as exc:  # noqa: BLE001
                 browser_errors.append(f"{engine_name}: {type(exc).__name__}: {exc}")
 
@@ -243,6 +255,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         )
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
+        _browser_task.cancel()
         _SEARCH_FAIL_COUNTS.pop(query_key, None)
         res["suggested_next"] = [
             next_step("browse_fetch", "fetch and index a result URL"),

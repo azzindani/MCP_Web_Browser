@@ -43,8 +43,8 @@ _SEARXNG_URL: Final[str] = os.environ.get("MCP_SEARCH_BACKEND", "http://127.0.0.
 _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
-# Shorter timeout for search — we fail fast and try the next backend.
-_SEARCH_TIMEOUT: Final[float] = 8.0
+# Fail fast — DDG/Brave consistently fail; don't burn time waiting.
+_SEARCH_TIMEOUT: Final[float] = 4.0
 
 # Browser-like headers that help DDG / Brave serve results instead of CAPTCHAs.
 _SEARCH_HEADERS: Final[dict[str, str]] = {
