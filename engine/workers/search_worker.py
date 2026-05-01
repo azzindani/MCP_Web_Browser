@@ -11,6 +11,7 @@ layer as the HTTP worker — search endpoints are just URLs.
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import re
 import time
@@ -158,12 +159,32 @@ def _parse_ddg_lite(body: str, cap: int) -> list[SearchHit]:
     return hits
 
 
+def _resolve_bing_redirect(href: str) -> str:
+    """Bing wraps real URLs in /ck/a?...&u=a1{base64url}... tracking redirects."""
+    if "bing.com/ck/a" not in href:
+        return href
+    try:
+        qs = parse_qs(urlparse(href).query)
+        u_param = (qs.get("u") or [""])[0]
+        if u_param.startswith("a1"):
+            encoded = u_param[2:]
+            padding = 4 - len(encoded) % 4
+            if padding != 4:
+                encoded += "=" * padding
+            decoded = base64.urlsafe_b64decode(encoded).decode("utf-8", errors="replace")
+            if decoded.startswith("http"):
+                return decoded
+    except Exception:  # noqa: BLE001
+        pass
+    return href
+
+
 def _parse_bing(body: str, cap: int) -> list[SearchHit]:
     hits: list[SearchHit] = []
     for match in _BING_RESULT_RE.finditer(body):
         if len(hits) >= cap:
             break
-        href = unescape(match.group(1))
+        href = _resolve_bing_redirect(unescape(match.group(1)))
         raw_title = match.group(2)
         raw_snippet = match.group(3) or match.group(4) or ""
         if not href.startswith("http"):
@@ -309,15 +330,14 @@ class SearchWorker:
             raise RuntimeError(f"{domain} circuit open")
         await self._limiter.acquire(domain)
         bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.google.com/", "Accept-Language": "en-US,en;q=0.9"}
+        bing_params = {"q": query, "count": str(cap), "setlang": "en-US", "mkt": "en-US", "cc": "US"}
         if _CURL_CFFI:
-            status, body = await _curl_search_get(
-                _BING_URL, {"q": query, "count": str(cap), "setlang": "en"}, bing_headers
-            )
+            status, body = await _curl_search_get(_BING_URL, bing_params, bing_headers)
         else:
             response = await with_retry(
                 lambda: self._client.get(
                     _BING_URL,
-                    params={"q": query, "count": str(cap), "setlang": "en"},
+                    params=bing_params,
                     headers=bing_headers,
                     timeout=_SEARCH_TIMEOUT,
                 ),
