@@ -33,9 +33,7 @@ try:
 except ImportError:  # pragma: no cover
     pass
 
-_SKIP_TAGS: frozenset[str] = frozenset(
-    {"script", "style", "meta", "link", "noscript", "head", "template"}
-)
+_SKIP_TAGS: frozenset[str] = frozenset({"script", "style", "meta", "link", "noscript", "head", "template"})
 _SKIP_SCHEMES: tuple[str, ...] = ("javascript:", "mailto:", "tel:", "data:")
 
 
@@ -120,9 +118,7 @@ class HtmlExtractor:
         if not _LXML:
             raise RuntimeError("lxml not installed. Run: pip install 'lxml>=4.9' 'cssselect>=1.2'")
         parser = lxml_html.HTMLParser(recover=True, encoding="utf-8")
-        self._doc = lxml_html.document_fromstring(
-            html.encode("utf-8", errors="replace"), parser=parser
-        )
+        self._doc = lxml_html.document_fromstring(html.encode("utf-8", errors="replace"), parser=parser)
         if base_url:
             try:
                 self._doc.make_links_absolute(base_url, resolve_base_href=False)
@@ -352,9 +348,7 @@ class HtmlExtractor:
 
             if want_attrs:
                 el_attrs = dict(el.attrib) if el.attrib is not None else {}
-                matched_attrs = sum(
-                    1 for k, v in want_attrs.items() if v.lower() in (el_attrs.get(k) or "").lower()
-                )
+                matched_attrs = sum(1 for k, v in want_attrs.items() if v.lower() in (el_attrs.get(k) or "").lower())
                 components.append(matched_attrs / len(want_attrs))
 
             if not components:

@@ -120,8 +120,7 @@ class Scheduler:
 
         with self._db:
             self._db.execute(
-                "INSERT INTO runs (run_id, started_at, total_tasks, instance_id, config)"
-                " VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO runs (run_id, started_at, total_tasks, instance_id, config) VALUES (?, ?, ?, ?, ?)",
                 (self._run_id, _now_iso(), total, self._cfg.instance_id, "{}"),
             )
 
@@ -213,9 +212,7 @@ class Scheduler:
 
         async def _fetch(t: Task) -> Any:
             async with sem:
-                return await worker.fetch_one(
-                    HttpTask(url=t.url, name=t.name, mode=t.mode, group=t.group)
-                )
+                return await worker.fetch_one(HttpTask(url=t.url, name=t.name, mode=t.mode, group=t.group))
 
         results = await asyncio.gather(*[_fetch(t) for t in tasks])
         for r in results:
@@ -252,10 +249,7 @@ class Scheduler:
     def _process_dict(self, d: dict[str, Any]) -> None:
         self._stream.write(d)
         self._indexer.index(d, self._run_id)
-        if (
-            DEFAULTS.CHECKPOINT_EVERY > 0
-            and self._queue.done_count % DEFAULTS.CHECKPOINT_EVERY == 0
-        ):
+        if DEFAULTS.CHECKPOINT_EVERY > 0 and self._queue.done_count % DEFAULTS.CHECKPOINT_EVERY == 0:
             self._checkpoint.save(self._queue.get_done_urls(), self._queue.total_count)
 
     # ── finalize ──────────────────────────────────────────────────

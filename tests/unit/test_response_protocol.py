@@ -181,8 +181,7 @@ def test_browse_verify_not_indexed_protocol(mem_db: sqlite3.Connection) -> None:
 def test_browse_verify_indexed_protocol(mem_db: sqlite3.Connection) -> None:
     _inject(mem_db)
     mem_db.execute(
-        "INSERT INTO pages (url, domain, title, status, mode, first_seen, last_seen) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO pages (url, domain, title, status, mode, first_seen, last_seen) VALUES (?,?,?,?,?,?,?)",
         ("https://x.com", "x.com", "X", "ok", "http_curl", "2025-01-01", "2025-01-01"),
     )
     mem_db.commit()

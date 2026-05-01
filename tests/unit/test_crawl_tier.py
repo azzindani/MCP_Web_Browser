@@ -96,9 +96,7 @@ def test_crawl_run_indexes_pages(isolated_engine: None) -> None:
     assert out["ok"] is True
     assert out["pages"] >= 1
     # Verify the indexer wrote into pages table via query layer.
-    rows = engine.query_select(
-        "SELECT url FROM pages WHERE url LIKE 'https://example.com/section/%'"
-    )
+    rows = engine.query_select("SELECT url FROM pages WHERE url LIKE 'https://example.com/section/%'")
     assert rows["total"] >= 2
 
 

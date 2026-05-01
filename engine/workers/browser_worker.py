@@ -69,13 +69,7 @@ def build_stealth_script(p: BrowserProfile) -> str:
     Run once per page via `page.add_init_script()` before any site JS.
     """
     languages = ["id-ID", "id", "en-US", "en"] if p.locale.startswith("id") else ["en-US", "en"]
-    platform_value = (
-        "Windows"
-        if p.platform.startswith("Win")
-        else "macOS"
-        if p.platform == "MacIntel"
-        else "Linux"
-    )
+    platform_value = "Windows" if p.platform.startswith("Win") else "macOS" if p.platform == "MacIntel" else "Linux"
     avail_height = p.screen_height - 40
     return _STEALTH_TEMPLATE.format(
         platform=json.dumps(p.platform),
@@ -481,11 +475,7 @@ class BrowserWorker:
                 "sec-ch-ua": p.sec_ch_ua_full,
                 "sec-ch-ua-mobile": "?0",
                 "sec-ch-ua-platform": json.dumps(
-                    "Windows"
-                    if p.platform.startswith("Win")
-                    else "macOS"
-                    if p.platform == "MacIntel"
-                    else "Linux"
+                    "Windows" if p.platform.startswith("Win") else "macOS" if p.platform == "MacIntel" else "Linux"
                 ),
             },
         )

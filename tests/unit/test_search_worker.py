@@ -106,12 +106,7 @@ async def test_returns_none_when_all_fail() -> None:
 async def test_respects_get_max_results_default(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")
     body = json.dumps(
-        {
-            "results": [
-                {"title": f"r{i}", "url": f"https://example.com/{i}", "content": "x"}
-                for i in range(50)
-            ]
-        }
+        {"results": [{"title": f"r{i}", "url": f"https://example.com/{i}", "content": "x"} for i in range(50)]}
     )
 
     def handler(request: httpx.Request) -> httpx.Response:

@@ -9,9 +9,7 @@ import pytest
 from shared import version_control as vc
 
 
-def test_snapshot_returns_none_when_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_snapshot_returns_none_when_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     assert vc.snapshot("never_existed.db") is None
 
@@ -26,9 +24,7 @@ def test_snapshot_creates_bak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert backup.name == "data.db.bak"
 
 
-def test_atomic_write_text_replaces_atomically(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_atomic_write_text_replaces_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     out = vc.atomic_write_text("nested/dir/out.json", '{"k": 1}')
     assert out.read_text() == '{"k": 1}'

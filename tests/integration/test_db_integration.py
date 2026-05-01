@@ -126,9 +126,7 @@ def test_news_dedup_by_content_hash(indexer: Indexer, db: sqlite3.Connection) ->
     }
     indexer.index(result, "r1")
     indexer.index(result, "r2")  # same headline — should not duplicate
-    rows = list(
-        db.execute("SELECT COUNT(*) AS n FROM news WHERE headline=?", ("Duplicate headline test",))
-    )
+    rows = list(db.execute("SELECT COUNT(*) AS n FROM news WHERE headline=?", ("Duplicate headline test",)))
     assert rows[0]["n"] == 1
 
 

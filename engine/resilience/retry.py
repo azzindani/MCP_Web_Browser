@@ -11,12 +11,11 @@ from __future__ import annotations
 import asyncio
 import random
 from collections.abc import Awaitable, Callable
-from typing import Literal, TypeVar
+from typing import Literal
 
 from engine.config.defaults import DEFAULTS
 
 ErrorClass = Literal["transient", "rate_limit", "blocked", "not_found", "permanent"]
-T = TypeVar("T")
 
 OnRetry = Callable[[int, BaseException, float], None]
 
@@ -57,7 +56,7 @@ def backoff_ms(attempt: int, cls: ErrorClass, *, rng: random.Random | None = Non
     return min(exp + jitter, DEFAULTS.BACKOFF_MAX_MS)
 
 
-async def with_retry(
+async def with_retry[T](
     fn: Callable[[], Awaitable[T]],
     *,
     max_retries: int = DEFAULTS.MAX_RETRIES,

@@ -12,9 +12,7 @@ from engine.resilience.rate_limiter import RateLimiter
 from engine.workers.http_worker import HttpWorker, Task
 
 
-def _fixed_handler(
-    body: str, status: int = 200, content_type: str = "application/json"
-) -> httpx.MockTransport:
+def _fixed_handler(body: str, status: int = 200, content_type: str = "application/json") -> httpx.MockTransport:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(
             status_code=status,
@@ -91,9 +89,7 @@ async def test_botwall_html_marks_blocked() -> None:
 @pytest.mark.asyncio
 async def test_404_records_error_and_trips_breaker() -> None:
     worker = _make_worker(_fixed_handler("not found", status=404, content_type="text/plain"))
-    result = await worker.fetch_one(
-        Task(url="https://example.com/missing", name="x", max_retries=1)
-    )
+    result = await worker.fetch_one(Task(url="https://example.com/missing", name="x", max_retries=1))
     assert result.status == "error"
     assert "404" in (result.error or "")
 

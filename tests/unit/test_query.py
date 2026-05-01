@@ -55,9 +55,7 @@ def test_select_rejects_non_select(db: sqlite3.Connection) -> None:
         q.select("DELETE FROM pages")
 
 
-def test_select_caps_rows_in_constrained_mode(
-    db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_select_caps_rows_in_constrained_mode(db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_CONSTRAINED_MODE", "1")
     q = QueryEngine(db)
     rows = q.select("SELECT * FROM pages")

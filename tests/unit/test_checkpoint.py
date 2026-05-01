@@ -10,9 +10,7 @@ import pytest
 from engine.core.checkpoint import Checkpoint
 
 
-def test_fresh_checkpoint_when_file_missing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fresh_checkpoint_when_file_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     cp = Checkpoint("ckpt.json", run_id="r-1")
     assert cp.run_id() == "r-1"

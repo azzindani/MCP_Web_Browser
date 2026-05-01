@@ -54,10 +54,7 @@ _BASE_HEADERS: dict[str, str] = {
 # Chrome-120 fingerprint headers for HTML page fetching.
 _CURL_HEADERS: dict[str, str] = {
     **_BASE_HEADERS,
-    "Accept": (
-        "text/html,application/xhtml+xml,application/xml;q=0.9,"
-        "image/avif,image/webp,image/apng,*/*;q=0.8"
-    ),
+    "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"),
     "Accept-Encoding": "gzip, deflate, br",
     "Referer": "https://www.google.com/",  # stealthy: appear to come from search
     "sec-ch-ua": ('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
@@ -403,9 +400,7 @@ class HttpWorker:
         return text, text
 
     @staticmethod
-    def _classify_payload(
-        body: Any, text: str, task: Task
-    ) -> tuple[dict[str, Any], str, list[str]]:
+    def _classify_payload(body: Any, text: str, task: Task) -> tuple[dict[str, Any], str, list[str]]:
         # Yahoo Finance JSON
         if isinstance(body, dict) and "chart" in body:
             extracted = _parse_yahoo_chart(body)

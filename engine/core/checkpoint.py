@@ -52,9 +52,7 @@ class Checkpoint:
         if self._path.exists():
             try:
                 raw = json.loads(self._path.read_text(encoding="utf-8"))
-                _stderr(
-                    f"checkpoint loaded: {raw.get('done_count', 0)} done (run {raw.get('run_id')})"
-                )
+                _stderr(f"checkpoint loaded: {raw.get('done_count', 0)} done (run {raw.get('run_id')})")
                 return CheckpointData(
                     run_id=str(raw.get("run_id") or run_id),
                     saved_at=str(raw.get("saved_at") or _now_iso()),

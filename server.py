@@ -70,9 +70,7 @@ if _enabled("MCP_TIER_BASIC", "1"):
         limit: int | None = None,
     ) -> dict[str, Any]:
         """Extract elements by CSS/XPath/text/regex selector."""
-        return await engine.extract_from_url(
-            url, selector, mode=mode, output_type=output_type, limit=limit
-        )
+        return await engine.extract_from_url(url, selector, mode=mode, output_type=output_type, limit=limit)
 
 
 # ── Query tier ─────────────────────────────────────────────────────
@@ -85,9 +83,7 @@ if _enabled("MCP_TIER_QUERY", "1"):
         return engine.query_locate()
 
     @app.tool()
-    def query_search(
-        query: str, table: str = "fts_pages", limit: int | None = None
-    ) -> dict[str, Any]:
+    def query_search(query: str, table: str = "fts_pages", limit: int | None = None) -> dict[str, Any]:
         """FTS5 search across pages/news/files. <=10 rows."""
         return engine.query_search(query, table=table, limit=limit)
 

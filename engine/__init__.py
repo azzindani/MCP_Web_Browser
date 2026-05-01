@@ -123,8 +123,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "query": result.query,
         "backend": result.backend,
         "hits": [
-            {"title": h.title, "url": h.url, "snippet": h.snippet[:200], "backend": h.backend}
-            for h in result.hits
+            {"title": h.title, "url": h.url, "snippet": h.snippet[:200], "backend": h.backend} for h in result.hits
         ],
         "total": result.total,
         "truncated": result.truncated,
@@ -132,9 +131,7 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        res["hint"] = (
-            "Set MCP_SEARCH_BACKEND to a SearXNG URL; call browse_status() to check health."
-        )
+        res["hint"] = "Set MCP_SEARCH_BACKEND to a SearXNG URL; call browse_status() to check health."
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
         res["suggested_next"] = [
@@ -424,9 +421,7 @@ def query_search(query: str, table: str = "fts_pages", limit: int | None = None)
     return res
 
 
-def query_select(
-    sql: str, params: tuple[Any, ...] = (), limit: int | None = None
-) -> dict[str, Any]:
+def query_select(sql: str, params: tuple[Any, ...] = (), limit: int | None = None) -> dict[str, Any]:
     rt = runtime()
     cap = limit if limit is not None else get_max_rows()
     try:
@@ -445,9 +440,7 @@ def query_select(
     truncated = len(rows) >= cap
     progress = [ok("SQL executed", f"{len(rows)} rows")]
     if truncated:
-        progress.append(
-            warn("Results capped", f"add LIMIT {cap} or use query_export() for full data")
-        )
+        progress.append(warn("Results capped", f"add LIMIT {cap} or use query_export() for full data"))
     res = {
         "ok": True,
         "op": "query_select",
@@ -584,9 +577,7 @@ async def crawl_plan(url: str, max_links: int = 25) -> dict[str, Any]:
         "links": seed.links[:max_links],
         "files": seed.files[:max_links],
         "elapsed_ms": seed.elapsed_ms,
-        "progress": [
-            ok("Frontier enumerated", f"{len(seed.links)} links, {len(seed.files)} files")
-        ],
+        "progress": [ok("Frontier enumerated", f"{len(seed.links)} links, {len(seed.files)} files")],
         "suggested_next": [next_step("crawl_run", f"crawl up to {get_max_pages()} pages")],
         "carry_forward": {"url": url},
     }
@@ -681,9 +672,7 @@ async def crawl_resume(run_id: str, url: str, max_pages: int | None = None) -> d
 
 def crawl_verify(run_id: str) -> dict[str, Any]:
     rt = runtime()
-    run_rows = rt.query().select(
-        "SELECT run_id FROM runs WHERE run_id = ?", params=(run_id,), limit=1
-    )
+    run_rows = rt.query().select("SELECT run_id FROM runs WHERE run_id = ?", params=(run_id,), limit=1)
     if not run_rows:
         res: dict[str, Any] = {
             "ok": False,

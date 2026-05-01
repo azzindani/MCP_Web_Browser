@@ -27,9 +27,7 @@ def test_null_byte_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         resolve_path("foo\x00bar.db")
 
 
-def test_absolute_path_outside_root_is_rejected(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_absolute_path_outside_root_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path / "root"))
     (tmp_path / "root").mkdir()
     with pytest.raises(UnsafePathError):

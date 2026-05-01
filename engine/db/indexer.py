@@ -109,9 +109,7 @@ INSERT OR IGNORE INTO files
 VALUES (?, ?, ?, ?, ?, ?, 'discovered')
 """
 
-_SQL_INSERT_FTS_FILE = (
-    "INSERT INTO fts_files (filename, source_url, ext, content_text) VALUES (?, ?, ?, ?)"
-)
+_SQL_INSERT_FTS_FILE = "INSERT INTO fts_files (filename, source_url, ext, content_text) VALUES (?, ?, ?, ?)"
 
 _SQL_INSERT_LINK = """
 INSERT INTO links (from_url, to_url, anchor_text, discovered_at)
@@ -260,10 +258,7 @@ class Indexer:
             _SQL_INSERT_STOCK,
             (
                 ticker,
-                extracted.get("companyName")
-                or extracted.get("company_name")
-                or result.get("company")
-                or "",
+                extracted.get("companyName") or extracted.get("company_name") or result.get("company") or "",
                 safe_float(extracted.get("price") or result.get("price")),
                 safe_float(extracted.get("change") or extracted.get("change_val")),
                 safe_float(extracted.get("changePct") or extracted.get("change_pct")),

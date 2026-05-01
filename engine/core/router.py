@@ -178,11 +178,7 @@ class Router:
         signals.bot_wall_service = svc
 
         signals.is_json = "json" in ct or lower.lstrip().startswith(("{{", "[["))
-        signals.is_spa = (
-            "html" in ct
-            and not signals.cloudflare_block
-            and any(m in lower for m in DEFAULTS.SPA_MARKERS)
-        )
+        signals.is_spa = "html" in ct and not signals.cloudflare_block and any(m in lower for m in DEFAULTS.SPA_MARKERS)
         signals.is_static_html = (
             "html" in ct
             and not signals.cloudflare_block
@@ -190,9 +186,7 @@ class Router:
             and response.status_code == 200
             and len(text) > 5_000
         )
-        signals.http_works = (
-            response.status_code == 200 and not signals.cloudflare_block and not signals.bot_wall
-        )
+        signals.http_works = response.status_code == 200 and not signals.cloudflare_block and not signals.bot_wall
         return signals
 
     # ── decide & resolve ───────────────────────────────────────────

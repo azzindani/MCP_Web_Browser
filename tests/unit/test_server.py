@@ -77,9 +77,7 @@ def test_no_mcp_imports_under_engine() -> None:
         text = path.read_text(encoding="utf-8")
         for line in text.splitlines():
             stripped = line.lstrip()
-            assert not stripped.startswith(("from mcp", "import mcp")), (
-                f"{path}: forbidden mcp import: {stripped}"
-            )
+            assert not stripped.startswith(("from mcp", "import mcp")), f"{path}: forbidden mcp import: {stripped}"
 
 
 @pytest.fixture()
@@ -105,9 +103,7 @@ def isolated_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             )
         if path.endswith("/missing"):
             return httpx.Response(404, content=b"missing")
-        return httpx.Response(
-            200, content=b"<html>ok</html>", headers={"content-type": "text/html"}
-        )
+        return httpx.Response(200, content=b"<html>ok</html>", headers={"content-type": "text/html"})
 
     rt._client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler),
