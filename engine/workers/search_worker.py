@@ -45,6 +45,12 @@ _BING_URL: Final[str] = "https://www.bing.com/search"
 _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
+# MCP_SEARCH_LANG   — BCP-47 language tag for Bing setlang (default: en-US).
+# MCP_SEARCH_MARKET — Bing market code, e.g. id-ID, ja-JP (optional; omit for
+#                     global results in the chosen language).
+_SEARCH_LANG: Final[str] = os.environ.get("MCP_SEARCH_LANG", "en-US")
+_SEARCH_MARKET: Final[str | None] = os.environ.get("MCP_SEARCH_MARKET") or None
+
 # Fail fast — DDG/Brave consistently fail; don't burn time waiting.
 _SEARCH_TIMEOUT: Final[float] = 4.0
 
@@ -197,6 +203,20 @@ def _parse_bing(body: str, cap: int) -> list[SearchHit]:
                 backend="bing",
             )
         )
+    # Diversity guard: ≥90 % of results from the same domain+path_seg indicates
+    # Bing served a bot-detection fallback page, not real results.
+    if len(hits) >= 5:
+        from collections import Counter
+
+        def _key(h: SearchHit) -> str:
+            p = urlparse(h.url)
+            seg = p.path.lstrip("/").split("/")[0] if p.path.strip("/") else ""
+            return f"{p.netloc}/{seg}"
+
+        counts = Counter(_key(h) for h in hits)
+        top_count = counts.most_common(1)[0][1]
+        if top_count / len(hits) >= 0.9:
+            return []
     return hits
 
 
@@ -248,7 +268,7 @@ class SearchWorker:
         cap = limit if limit is not None else get_max_results()
         t0 = time.monotonic()
         errors: list[str] = []
-        for backend in ("searxng", "bing", "ddg", "brave"):
+        for backend in ("searxng", "ddg", "bing", "brave"):
             hits, err = await self._try_backend(backend, query, cap)
             if err:
                 errors.append(f"{backend}: {err}")
@@ -329,8 +349,10 @@ class SearchWorker:
         if not self._breaker.allow(domain):
             raise RuntimeError(f"{domain} circuit open")
         await self._limiter.acquire(domain)
-        bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.google.com/", "Accept-Language": "en-US,en;q=0.9"}
-        bing_params = {"q": query, "count": str(cap), "setlang": "en-US", "mkt": "en-US", "cc": "US"}
+        bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.bing.com/", "Accept-Language": "en-US,en;q=0.9"}
+        bing_params: dict[str, str] = {"q": query, "count": str(cap), "setlang": _SEARCH_LANG}
+        if _SEARCH_MARKET:
+            bing_params["mkt"] = _SEARCH_MARKET
         if _CURL_CFFI:
             status, body = await _curl_search_get(_BING_URL, bing_params, bing_headers)
         else:

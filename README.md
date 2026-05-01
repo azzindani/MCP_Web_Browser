@@ -4,9 +4,10 @@ A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud A
 
 ## Features
 
-- **18 tools** across 3 tiers: basic (8), query (5), crawl (5)
+- **19 tools** across 3 tiers: basic (8), query (5), crawl (6)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for bounded, surgical web access
-- **Web search** — keyless: SearXNG → DuckDuckGo HTML → Brave HTML fallback chain
+- **Web search** — keyless: SearXNG → DuckDuckGo → Bing → Brave → Playwright Google/DDG fallback chain
+- **Deep research** — `browse_research` auto-chains search + fetch + optional re-search, returns pre-formatted `## Sources` citations
 - **HTTP / API fetch** — `httpx` + HTTP/2, TLS fingerprint impersonation via `curl_cffi`
 - **DOM / SPA rendering** — Playwright stealth (canvas, WebGL, battery spoofing)
 - **Domain crawl** — BFS, file discovery (PDF/XLSX/CSV/...), checkpoint resume
@@ -84,6 +85,8 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
 4. Wait for the blue dot next to **mcp_web_browser**
 5. Start chatting — the model will see all 13 default tools (Basic + Query)
 
+> To enable deep research (`browse_research`) add `"MCP_TIER_CRAWL": "1"` to the `env` block.
+
 ### macOS / Linux
 
 Replace the `"command"` and `"args"` with the bash equivalent:
@@ -139,7 +142,7 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools).
 | `query_export` | Export table to CSV or JSON. Returns path only. |
 | `query_stats` | Per-table row counts + db file size in bytes. |
 
-### Crawl tier — `MCP_TIER_CRAWL=1` (5 tools, off by default)
+### Crawl tier — `MCP_TIER_CRAWL=1` (6 tools, off by default)
 
 | Tool | Purpose |
 |---|---|
@@ -148,6 +151,16 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools).
 | `crawl_run` | Bounded crawl. Indexes pages, returns receipt. |
 | `crawl_resume` | Resume a crawl run from its last checkpoint. |
 | `crawl_verify` | Run summary: pages indexed, errors, dead-letter count. |
+| `browse_research` | **Deep research**: search + auto-fetch top results + optional re-search. Returns `sources[]`, `cite_hints`, and a ready-to-paste `## Sources` block. |
+
+#### `browse_research` parameters
+
+| Parameter | Default | Purpose |
+|---|---|---|
+| `query` | — | Research question |
+| `depth` | `2` | `1` = search only · `2` = search + fetch top N · `3` = search + fetch + re-search |
+| `fetch_top` | `3` | How many top results to fetch at depth ≥ 2 |
+| `limit` | platform cap | Max search hits |
 
 ---
 
@@ -162,7 +175,9 @@ All limits and storage paths flow through environment variables. Defaults are tu
 | `MCP_TIER_BASIC` | `1` | Toggle the Basic tier (`browse_*`) |
 | `MCP_TIER_QUERY` | `1` | Toggle the Query tier (`query_*`) |
 | `MCP_TIER_CRAWL` | `0` | Toggle the Crawl tier (`crawl_*`) |
-| `MCP_SEARCH_BACKEND` | `http://127.0.0.1:8888` | SearXNG base URL (DDG/Brave fallback) |
+| `MCP_SEARCH_BACKEND` | `http://127.0.0.1:8888` | SearXNG base URL (DDG/Bing/Brave fallback) |
+| `MCP_SEARCH_LANG` | `en-US` | BCP-47 language tag for Bing results (e.g. `id`, `ja`) |
+| `MCP_SEARCH_MARKET` | _(unset = global)_ | Bing market code for regional results (e.g. `id-ID`, `ja-JP`) |
 
 ### Constrained-mode caps
 
@@ -201,6 +216,14 @@ Fetch https://example.com/table and extract the first table using CSS selector "
 ```
 Search the knowledge base for mentions of "vector database"
 ```
+
+### Deep research with automatic citations
+
+```
+Research the 2026 investment outlook for renewable energy — fetch the top sources and include references
+```
+
+The model will call `browse_research(query, depth=2)`, automatically fetching the top results, then synthesise an answer ending with a `## Sources` section populated from `cite_hints`.
 
 ### Crawl a domain
 

@@ -167,11 +167,16 @@ in the public surface. Compose two existing tools instead.
 |---------------------------------|-------|---------|
 | `mcp_web_browser_basic`         | 8     | on      |
 | `mcp_web_browser_query`         | 5     | on      |
-| `mcp_web_browser_crawl`         | 5     | off     |
+| `mcp_web_browser_crawl`         | 6     | off     |
 
 Basic + Query = 13 tools. On constrained hosts with a hard 12-tool
 ceiling, disable Query (`MCP_TIER_QUERY=0`) to stay under the cap.
 Never enable all three tiers at once.
+
+`browse_research` lives in the crawl tier because it is a multi-step
+deep-dive operation. It is the only tool in that tier that begins with
+`browse_` instead of `crawl_`; this is intentional — it is a
+cross-cutting research primitive, not a domain-crawler.
 
 ### 4.3 Tool schema discipline
 
@@ -288,6 +293,7 @@ Never enable all three tiers at once.
 | crawl   | `crawl_run`      | PATCH    | [x]    |
 | crawl   | `crawl_resume`   | PATCH    | [x]    |
 | crawl   | `crawl_verify`   | VERIFY   | [x]    |
+| crawl   | `browse_research`| composite| [x]    |
 
 ### 7.3 Compliance gates (CI)
 

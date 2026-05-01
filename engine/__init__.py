@@ -236,12 +236,21 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
                         for h in raw_hits
                     ]
                     res["total"] = len(raw_hits)
+                    cite_hints = [f"[{i + 1}] {h['title']} — {h['url']}" for i, h in enumerate(raw_hits)]
+                    res["cite_hints"] = cite_hints
                     res["suggested_next"] = [
-                        next_step("browse_fetch", "fetch and index a result URL"),
-                        next_step("browse_inspect", "preview a result URL before indexing"),
-                        next_step("browse_extract", "extract specific data from a result URL"),
-                    ]
-                    res["carry_forward"] = {"urls": [h["url"] for h in raw_hits[:3]]}
+                        {"tool": "browse_fetch", "url": h["url"], "reason": f"[{i + 1}] {h['title'][:55]}"}
+                        for i, h in enumerate(raw_hits[:3])
+                    ] + [next_step("browse_research", "auto search+fetch for deep research with citations")]
+                    res["carry_forward"] = {"urls": [h["url"] for h in raw_hits[:5]], "query": query}
+                    res["handover"] = {
+                        "instruction": (
+                            "Call browse_fetch on the most relevant URLs above to get full content, "
+                            "then synthesize your answer. "
+                            "End your response with a '## Sources' section using the cite_format below."
+                        ),
+                        "cite_format": "## Sources\n" + "\n".join(f"- {c}" for c in cite_hints[:10]),
+                    }
                     _SEARCH_FAIL_COUNTS.pop(query_key, None)
                     res["token_estimate"] = _tok(res)
                     return res
@@ -260,12 +269,21 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         res["suggested_next"] = [next_step("browse_status", "check engine health")]
     else:
         _SEARCH_FAIL_COUNTS.pop(query_key, None)
+        cite_hints = [f"[{i + 1}] {h.title} — {h.url}" for i, h in enumerate(result.hits)]
+        res["cite_hints"] = cite_hints
         res["suggested_next"] = [
-            next_step("browse_fetch", "fetch and index a result URL"),
-            next_step("browse_inspect", "preview a result URL before indexing"),
-            next_step("browse_extract", "extract specific data from a result URL"),
-        ]
-        res["carry_forward"] = {"urls": [h.url for h in result.hits[:3]]}
+            {"tool": "browse_fetch", "url": h.url, "reason": f"[{i + 1}] {h.title[:55]}"}
+            for i, h in enumerate(result.hits[:3])
+        ] + [next_step("browse_research", "auto search+fetch for deep research with citations")]
+        res["carry_forward"] = {"urls": [h.url for h in result.hits[:5]], "query": query}
+        res["handover"] = {
+            "instruction": (
+                "Call browse_fetch on the most relevant URLs above to get full content, "
+                "then synthesize your answer. "
+                "End your response with a '## Sources' section using the cite_format below."
+            ),
+            "cite_format": "## Sources\n" + "\n".join(f"- {c}" for c in cite_hints[:10]),
+        }
     res["token_estimate"] = _tok(res)
     return res
 
@@ -320,12 +338,25 @@ async def fetch_one(url: str, run_id: str = "mcp") -> dict[str, Any]:
             next_step("browse_inspect", "check for bot-walls or redirects"),
         ]
     else:
+        preview = ""
+        if isinstance(result.extracted, dict):
+            preview = str(result.extracted.get("text_preview") or "")[:300]
+        cite = f"{result.title or result.url} — {result.url}"
+        res["cite_hints"] = [cite]
         res["suggested_next"] = [
             next_step("browse_verify", "confirm the page was indexed"),
             next_step("browse_extract", "extract specific data with CSS/XPath selector"),
             next_step("query_search", "search indexed content for keywords"),
         ]
-        res["carry_forward"] = {"url": result.url}
+        res["carry_forward"] = {"url": result.url, "title": result.title, "preview": preview}
+        res["handover"] = {
+            "instruction": (
+                "The page has been fetched and indexed. "
+                "Use the text_preview in extracted or query_search to find relevant passages. "
+                "Cite this source at the end of your response."
+            ),
+            "cite_format": f"- {cite}",
+        }
     res["token_estimate"] = _tok(res)
     return res
 
@@ -955,5 +986,154 @@ async def extract_from_url(
         ],
         "carry_forward": {"url": url},
     }
+    res["token_estimate"] = _tok(res)
+    return res
+
+
+# ── Research tier ─────────────────────────────────────────────────────────────
+
+
+async def research_topic(
+    query: str,
+    depth: int = 2,
+    fetch_top: int = 3,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    """Search + auto-fetch top results and return sources ready for citation.
+
+    depth=1  search only (no fetching)
+    depth=2  search + fetch top fetch_top URLs          (default)
+    depth=3  search + fetch + one refined follow-up search
+    """
+    rt = runtime()
+    cap = limit if limit is not None else get_max_results()
+    t0 = time.monotonic()
+    progress: list[dict] = []
+    errors: list[str] = []
+
+    # ── Step 1: search ────────────────────────────────────────────────────────
+    search_result = await rt.search_worker().search(query, limit=cap)
+    if search_result.backend == "none" and rt._browser_worker is not None:
+        try:
+            bw = await rt.browser_search_worker()
+            raw = await asyncio.wait_for(bw.search_google(query, cap), timeout=20.0)
+            if raw:
+                search_result.hits = [
+                    SearchHit(title=h["title"], url=h["url"], snippet=h["snippet"], backend="browser_google")
+                    for h in raw
+                ]
+                search_result.backend = "browser_google"
+                search_result.total = len(raw)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"browser_fallback: {exc}")
+
+    if not search_result.hits:
+        no_results: dict[str, Any] = {
+            "ok": False,
+            "op": "browse_research",
+            "query": query,
+            "error": "search_failed",
+            "hint": "All search backends failed. Try browse_status() to diagnose.",
+            "progress": [fail("Search failed", "all backends returned 0 hits")],
+            "suggested_next": [next_step("browse_status", "check engine health")],
+        }
+        no_results["token_estimate"] = _tok(no_results)
+        return no_results
+
+    progress.append(ok("Search", f"{len(search_result.hits)} hits via {search_result.backend}"))
+
+    # ── Step 2: fetch top-N ───────────────────────────────────────────────────
+    sources: list[dict[str, Any]] = []
+    for i, hit in enumerate(search_result.hits):
+        sources.append(
+            {
+                "rank": i + 1,
+                "title": hit.title,
+                "url": hit.url,
+                "snippet": hit.snippet,
+                "fetched": False,
+                "text_preview": None,
+            }
+        )
+
+    if depth >= 2:
+        for i in range(min(fetch_top, len(sources))):
+            url_to_fetch = sources[i]["url"]
+            try:
+                fetch_result = await rt.http_worker().fetch_one(Task(url=url_to_fetch))
+                if fetch_result.status == "ok":
+                    preview = ""
+                    if isinstance(fetch_result.extracted, dict):
+                        preview = str(fetch_result.extracted.get("text_preview") or "")[:500]
+                    sources[i]["fetched"] = True
+                    sources[i]["text_preview"] = preview
+                    if fetch_result.title:
+                        sources[i]["title"] = fetch_result.title
+                    progress.append(ok("Fetched", f"[{i + 1}] {url_to_fetch}"))
+                else:
+                    errors.append(f"fetch[{i + 1}]: {fetch_result.error or fetch_result.status}")
+                    progress.append(warn("Fetch skipped", f"[{i + 1}] {fetch_result.error or 'error'}"))
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"fetch[{i + 1}]: {exc}")
+                progress.append(warn("Fetch error", f"[{i + 1}] {str(exc)[:60]}"))
+
+    # ── Step 3: optional refined follow-up search ─────────────────────────────
+    if depth >= 3:
+        fetched_titles = " ".join(s["title"] for s in sources if s["fetched"])[:120]
+        refined_query = f"{query} {fetched_titles}".strip()
+        try:
+            refined = await rt.search_worker().search(refined_query, limit=cap)
+            if refined.hits:
+                seen_urls = {s["url"] for s in sources}
+                new_hits = [h for h in refined.hits if h.url not in seen_urls]
+                for j, hit in enumerate(new_hits[:cap], len(sources) + 1):
+                    sources.append(
+                        {
+                            "rank": j,
+                            "title": hit.title,
+                            "url": hit.url,
+                            "snippet": hit.snippet,
+                            "fetched": False,
+                            "text_preview": None,
+                        }
+                    )
+                progress.append(info("Refined search", f"+{len(new_hits)} additional hits"))
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"refined_search: {exc}")
+
+    # ── Build cite_hints ──────────────────────────────────────────────────────
+    cite_hints = [f"[{s['rank']}] {s['title']} — {s['url']}" for s in sources]
+    cite_format = "## Sources\n" + "\n".join(f"- {c}" for c in cite_hints)
+
+    res = {
+        "ok": True,
+        "op": "browse_research",
+        "query": query,
+        "depth": depth,
+        "search_backend": search_result.backend,
+        "sources": sources,
+        "cite_hints": cite_hints,
+        "elapsed_ms": int((time.monotonic() - t0) * 1000),
+        "progress": progress,
+        "handover": {
+            "instruction": (
+                "Synthesize the sources above into a coherent, well-structured answer. "
+                "Use text_preview fields for detail where available. "
+                "End your response with a '## Sources' section using the cite_format below."
+            ),
+            "cite_format": cite_format,
+        },
+        "suggested_next": [
+            next_step("browse_research", "run a follow-up research query to go deeper"),
+            next_step("browse_fetch", "fetch an additional result URL manually"),
+            next_step("query_search", "full-text search across all indexed pages"),
+        ],
+        "carry_forward": {
+            "query": query,
+            "urls": [s["url"] for s in sources[:5]],
+        },
+    }
+    if errors:
+        res["errors"] = errors
     res["token_estimate"] = _tok(res)
     return res

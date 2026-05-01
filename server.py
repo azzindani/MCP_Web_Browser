@@ -147,6 +147,16 @@ if _enabled("MCP_TIER_CRAWL", "0"):
         """Run summary: pages, errors, dead-letter."""
         return engine.crawl_verify(run_id)
 
+    @app.tool()
+    async def browse_research(
+        query: str,
+        depth: int = 2,
+        fetch_top: int = 3,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Search + auto-fetch top results. Returns sources + cite_hints."""
+        return await engine.research_topic(query, depth=depth, fetch_top=fetch_top, limit=limit)
+
 
 def main() -> None:
     app.run()
