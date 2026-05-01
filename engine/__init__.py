@@ -198,32 +198,44 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
         "progress": progress,
     }
     if not success:
-        # Browser fallback: launch Playwright + DDG when all HTTP backends fail.
-        browser_error: str | None = None
+        # Browser fallback: try Google then DDG via Playwright stealth Chromium.
+        cap = get_max_results() if limit is None else limit
+        browser_errors: list[str] = []
         try:
             bw = await rt.browser_search_worker()
-            raw_hits = await bw.search(query, get_max_results() if limit is None else limit)
-            if raw_hits:
-                res["ok"] = True
-                res["backend"] = "browser_ddg"
-                res["hits"] = [
-                    {"title": h["title"], "url": h["url"], "snippet": h["snippet"][:200], "backend": "browser_ddg"}
-                    for h in raw_hits
-                ]
-                res["total"] = len(raw_hits)
-                res["suggested_next"] = [
-                    next_step("browse_fetch", "fetch and index a result URL"),
-                    next_step("browse_inspect", "preview a result URL before indexing"),
-                ]
-                res["carry_forward"] = {"urls": [h["url"] for h in raw_hits[:3]]}
-                _SEARCH_FAIL_COUNTS.pop(query_key, None)
-                res["token_estimate"] = _tok(res)
-                return res
         except Exception as exc:  # noqa: BLE001
-            browser_error = f"browser_ddg: {type(exc).__name__}: {exc}"
+            browser_errors.append(f"browser_launch: {type(exc).__name__}: {exc}"[:120])
+            bw = None
+        for engine_name, search_fn in (
+            ("browser_google", bw.search_google if bw else None),
+            ("browser_ddg", bw.search_ddg if bw else None),
+        ):
+            if search_fn is None:
+                continue
+            try:
+                raw_hits = await search_fn(query, cap)
+                if raw_hits:
+                    res["ok"] = True
+                    res["backend"] = engine_name
+                    res["hits"] = [
+                        {"title": h["title"], "url": h["url"], "snippet": h["snippet"][:200], "backend": engine_name}
+                        for h in raw_hits
+                    ]
+                    res["total"] = len(raw_hits)
+                    res["suggested_next"] = [
+                        next_step("browse_fetch", "fetch and index a result URL"),
+                        next_step("browse_inspect", "preview a result URL before indexing"),
+                        next_step("browse_extract", "extract specific data from a result URL"),
+                    ]
+                    res["carry_forward"] = {"urls": [h["url"] for h in raw_hits[:3]]}
+                    _SEARCH_FAIL_COUNTS.pop(query_key, None)
+                    res["token_estimate"] = _tok(res)
+                    return res
+            except Exception as exc:  # noqa: BLE001
+                browser_errors.append(f"{engine_name}: {type(exc).__name__}: {exc}")
 
         _SEARCH_FAIL_COUNTS[query_key] = _SEARCH_FAIL_COUNTS.get(query_key, 0) + 1
-        res["backend_errors"] = result.errors + ([browser_error] if browser_error else [])
+        res["backend_errors"] = result.errors + browser_errors
         res["do_not_retry"] = True
         res["hint"] = (
             "All search backends failed. STOP — do not call browse_search again. "

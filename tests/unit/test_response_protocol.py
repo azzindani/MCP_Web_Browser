@@ -97,7 +97,10 @@ async def test_browse_search_failure_protocol() -> None:
         truncated=False,
         elapsed_ms=50,
     )
-    with patch.object(engine._Runtime, "search_worker") as f:
+    with (
+        patch.object(engine._Runtime, "search_worker") as f,
+        patch.object(engine._Runtime, "browser_search_worker", new=AsyncMock(side_effect=RuntimeError("no browser"))),
+    ):
         sw = MagicMock()
         sw.search = AsyncMock(return_value=mock_result)
         f.return_value = sw

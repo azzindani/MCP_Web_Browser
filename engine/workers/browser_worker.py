@@ -318,7 +318,35 @@ _EVAL_LINKS = """
 """
 
 
-# DDG search result extraction — multiple selector fallbacks for different page versions.
+# Google: walk every h3 on the page — title+link pairs are the most stable anchor.
+_EVAL_GOOGLE_SEARCH = """
+(cap) => {
+  const hits = [];
+  const seen = new Set();
+  for (const h3 of Array.from(document.querySelectorAll('h3'))) {
+    if (hits.length >= cap) break;
+    const a = h3.closest('a') || h3.querySelector('a') ||
+              h3.parentElement?.querySelector('a[href^="http"]');
+    if (!a) continue;
+    const href = a.href || '';
+    if (!href.startsWith('http') || href.includes('google.com') ||
+        href.includes('webcache') || seen.has(href)) continue;
+    seen.add(href);
+    const title = (h3.innerText || h3.textContent || '').trim();
+    if (title.length < 3) continue;
+    const block = h3.closest('[data-hveid], div.g, [data-sokoban-container]') ||
+                  h3.parentElement;
+    const snipEl = block?.querySelector(
+      '[data-sncf="1"], [data-snf], .VwiC3b, .IsZvec, [class*="snippet"], span[data-dtld]'
+    ) || block?.querySelector('div > span, p');
+    const snippet = (snipEl?.innerText || snipEl?.textContent || '').trim().slice(0, 300);
+    hits.push({ title, url: href, snippet });
+  }
+  return hits;
+}
+"""
+
+# DDG Lite: result links and snippets in container elements.
 _EVAL_DDG_SEARCH = """
 (cap) => {
   const hits = [];
@@ -549,25 +577,51 @@ class BrowserWorker:
         except Exception:
             return {}
 
-    async def search(self, query: str, cap: int) -> list[dict[str, str]]:
+    async def search_google(self, query: str, cap: int) -> list[dict[str, str]]:
+        """Search Google via real browser. Returns list of {title, url, snippet}."""
+        return await self._browser_search(
+            query=query,
+            cap=cap,
+            domain="www.google.com",
+            search_url=f"https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us",
+            wait_selector="div.g, h3, [data-sokoban-container]",
+            evaluator=_EVAL_GOOGLE_SEARCH,
+        )
+
+    async def search_ddg(self, query: str, cap: int) -> list[dict[str, str]]:
         """Search DuckDuckGo via real browser. Returns list of {title, url, snippet}."""
-        domain = "duckduckgo.com"
+        return await self._browser_search(
+            query=query,
+            cap=cap,
+            domain="duckduckgo.com",
+            search_url=f"https://duckduckgo.com/?q={quote_plus(query)}&ia=web",
+            wait_selector="article, [data-testid='result'], .result",
+            evaluator=_EVAL_DDG_SEARCH,
+        )
+
+    async def _browser_search(
+        self,
+        query: str,
+        cap: int,
+        domain: str,
+        search_url: str,
+        wait_selector: str,
+        evaluator: str,
+    ) -> list[dict[str, str]]:
         if not self._breaker.allow(domain):
             raise RuntimeError(f"{domain} circuit open")
         await self._limiter.acquire(domain)
 
-        search_url = f"https://duckduckgo.com/?q={quote_plus(query)}&ia=web"
         context = await self._make_context()
         page = await context.new_page()
         await page.add_init_script(build_stealth_script(self._profile))
         try:
             await page.goto(search_url, wait_until="domcontentloaded", timeout=20_000)
-            # wait for at least one result link to appear
             try:
-                await page.wait_for_selector("article, [data-testid='result'], .result", timeout=8_000)
+                await page.wait_for_selector(wait_selector, timeout=8_000)
             except Exception:
                 pass
-            hits: list[dict[str, str]] = await page.evaluate(_EVAL_DDG_SEARCH, cap)
+            hits: list[dict[str, str]] = await page.evaluate(evaluator, cap)
             await context.close()
             if hits:
                 self._breaker.success(domain)
