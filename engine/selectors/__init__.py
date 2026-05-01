@@ -14,34 +14,35 @@ Format::
         },
     }
 """
+
 from __future__ import annotations
 
 SELECTORS: dict[str, dict[str, str]] = {
     # IDX / Bursa Efek Indonesia
     "idx.co.id": {
-        "price"  : ".last-price",
-        "change" : ".price-change",
-        "volume" : ".volume",
+        "price": ".last-price",
+        "change": ".price-change",
+        "volume": ".volume",
     },
     # OJK
     "ojk.go.id": {
         "content": ".field-items",
-        "title"  : "h1.page-header",
+        "title": "h1.page-header",
     },
     # Investing.com Indonesia
     "id.investing.com": {
-        "price"   : "[data-test='instrument-price-last']",
-        "change"  : "[data-test='instrument-price-change']",
+        "price": "[data-test='instrument-price-last']",
+        "change": "[data-test='instrument-price-change']",
         "change_pct": "[data-test='instrument-price-change-percent']",
     },
     # kontan.co.id (financial news)
     "www.kontan.co.id": {
-        "title"  : "h1.title",
+        "title": "h1.title",
         "content": ".tmpt-desk-kon p",
     },
     # bisnis.com
     "www.bisnis.com": {
-        "title"  : "h1.title--detail",
+        "title": "h1.title--detail",
         "content": ".desc--detail p",
     },
 }

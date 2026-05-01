@@ -15,7 +15,7 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urljoin, urlparse
 
@@ -27,15 +27,28 @@ from engine.core.checkpoint import Checkpoint
 from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
 
-_STATIC_EXTENSIONS: frozenset[str] = frozenset({
-    ".css", ".js", ".mjs", ".map",
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".svg",
-    ".woff", ".woff2", ".ttf", ".eot", ".otf",
-})
-
-_LINK_RE = re.compile(
-    r'href=["\']([^"\'#?][^"\']*?)["\']', re.IGNORECASE
+_STATIC_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".css",
+        ".js",
+        ".mjs",
+        ".map",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".ico",
+        ".svg",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
+    }
 )
+
+_LINK_RE = re.compile(r'href=["\']([^"\'#?][^"\']*?)["\']', re.IGNORECASE)
 _TITLE_RE = re.compile(r"<title[^>]*>([^<]+)</title>", re.IGNORECASE)
 
 
@@ -47,7 +60,7 @@ def _domain_of(url: str) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _base_path(url: str) -> str:
@@ -151,9 +164,7 @@ class CrawlWorker:
             },
         )
 
-    async def run(
-        self, task: CrawlTask, *, checkpoint: Checkpoint | None = None
-    ) -> CrawlRunReport:
+    async def run(self, task: CrawlTask, *, checkpoint: Checkpoint | None = None) -> CrawlRunReport:
         started = _now_iso()
         run_id = checkpoint.run_id() if checkpoint else f"crawl-{int(time.time())}"
         seed_domain = _domain_of(task.url)
@@ -223,18 +234,25 @@ class CrawlWorker:
         except httpx.HTTPError as exc:
             self._breaker.failure(domain)
             return CrawlPageResult(
-                task=task, status="error", url=url,
+                task=task,
+                status="error",
+                url=url,
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
-                error=str(exc)[:100], group=task.group, extracted_at=now,
+                error=str(exc)[:100],
+                group=task.group,
+                extracted_at=now,
             )
 
         if response.status_code >= 400:
             self._breaker.failure(domain)
             return CrawlPageResult(
-                task=task, status="error", url=url,
+                task=task,
+                status="error",
+                url=url,
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
                 error=f"HTTP {response.status_code}",
-                group=task.group, extracted_at=now,
+                group=task.group,
+                extracted_at=now,
             )
 
         content_type = response.headers.get("content-type", "")
@@ -278,11 +296,16 @@ class CrawlWorker:
         self._breaker.success(domain)
 
         return CrawlPageResult(
-            task=task, status="ok", url=url, title=title,
-            links=unique_links, files=files,
+            task=task,
+            status="ok",
+            url=url,
+            title=title,
+            links=unique_links,
+            files=files,
             extracted={"files": files, "links": unique_links, "depth": depth},
             elapsed_ms=int((time.monotonic() - t0) * 1000),
-            group=task.group, extracted_at=now,
+            group=task.group,
+            extracted_at=now,
         )
 
     def _handle_non_html(
@@ -306,14 +329,23 @@ class CrawlWorker:
         if ext in DEFAULTS.COLLECTIBLE_EXTENSIONS:
             entry = {"url": url, "text": filename, "ext": ext}
             return CrawlPageResult(
-                task=task, status="ok", url=url, title=filename,
-                files=[entry], extracted={"files": [entry]},
+                task=task,
+                status="ok",
+                url=url,
+                title=filename,
+                files=[entry],
+                extracted={"files": [entry]},
                 elapsed_ms=int((time.monotonic() - t0) * 1000),
-                group=task.group, extracted_at=now,
+                group=task.group,
+                extracted_at=now,
             )
         # non-collectible binary/asset — skip silently
         return CrawlPageResult(
-            task=task, status="ok", url=url, title=filename,
+            task=task,
+            status="ok",
+            url=url,
+            title=filename,
             elapsed_ms=int((time.monotonic() - t0) * 1000),
-            group=task.group, extracted_at=now,
+            group=task.group,
+            extracted_at=now,
         )

@@ -5,14 +5,15 @@ calls engine entry-points directly (JIT, one tool call = one operation).
 This class is used by the optional CLI (engine/cli.py) when running a
 batch of tasks end-to-end.
 """
+
 from __future__ import annotations
 
 import asyncio
 import sqlite3
 import sys
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlparse
 
@@ -38,7 +39,7 @@ def _stderr(msg: str) -> None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -63,13 +64,13 @@ class Scheduler:
         self._db.row_factory = sqlite3.Row
         init_schema(self._db)
 
-        self._breaker  = CircuitBreaker()
-        self._limiter  = RateLimiter()
-        self._queue    = TaskQueue()
-        self._router   = Router(self._cfg.router_cache_path)
-        self._timer    = Timer(self._run_id)
-        self._indexer  = Indexer(self._db)
-        self._stream   = StreamWriter(self._cfg.jsonl_path)
+        self._breaker = CircuitBreaker()
+        self._limiter = RateLimiter()
+        self._queue = TaskQueue()
+        self._router = Router(self._cfg.router_cache_path)
+        self._timer = Timer(self._run_id)
+        self._indexer = Indexer(self._db)
+        self._stream = StreamWriter(self._cfg.jsonl_path)
         self._checkpoint = Checkpoint(
             self._cfg.checkpoint_path,
             run_id=self._run_id,
@@ -159,10 +160,10 @@ class Scheduler:
             if t:
                 tasks.append(t)
 
-        http_tasks   = [t for t in tasks if t.mode in ("http_json", "http_curl")]
+        http_tasks = [t for t in tasks if t.mode in ("http_json", "http_curl")]
         browser_tasks = [t for t in tasks if t.mode == "browser"]
-        crawl_tasks  = [t for t in tasks if t.mode == "crawl"]
-        blocked      = [t for t in tasks if t.mode == "blocked"]
+        crawl_tasks = [t for t in tasks if t.mode == "crawl"]
+        blocked = [t for t in tasks if t.mode == "blocked"]
 
         if blocked:
             _stderr(f"{len(blocked)} tasks blocked (Turnstile / hardcoded)")
@@ -171,8 +172,8 @@ class Scheduler:
             f" Crawl={len(crawl_tasks)} Blocked={len(blocked)}"
         )
 
-        client     = HttpWorker.make_client()
-        http_worker  = HttpWorker(client, self._breaker, self._limiter)
+        client = HttpWorker.make_client()
+        http_worker = HttpWorker(client, self._breaker, self._limiter)
         crawl_worker = CrawlWorker(client, self._breaker, self._limiter)
 
         try:
@@ -183,7 +184,8 @@ class Scheduler:
             # Browser phase: import lazily so tests can skip playwright
             if browser_tasks:
                 from engine.workers.browser_worker import BrowserWorker
-                bw = BrowserWorker(self._breaker, self._limiter)
+
+                bw = await BrowserWorker.launch(self._breaker, self._limiter)
                 browser_results = await self._run_browser_phase(browser_tasks, bw)
                 for r in browser_results:
                     self._process_http_result(r)
@@ -202,9 +204,7 @@ class Scheduler:
         finally:
             await client.aclose()
 
-    async def _run_http_phase(
-        self, tasks: list[Task], worker: HttpWorker
-    ) -> list[Any]:
+    async def _run_http_phase(self, tasks: list[Task], worker: HttpWorker) -> list[Any]:
         if not tasks:
             return []
         _stderr(f"─── HTTP PHASE ({len(tasks)} tasks) ───")
@@ -225,9 +225,7 @@ class Scheduler:
         self._timer.display()
         return list(results)
 
-    async def _run_browser_phase(
-        self, tasks: list[Task], worker: Any
-    ) -> list[Any]:
+    async def _run_browser_phase(self, tasks: list[Task], worker: Any) -> list[Any]:
         if not tasks:
             return []
         _stderr(f"─── BROWSER PHASE ({len(tasks)} tasks) ───")
@@ -247,8 +245,9 @@ class Scheduler:
         # strip the Task object — not JSON-serialisable
         d = {k: v for k, v in d.items() if k != "task"}
         self._process_dict(d)
-        if hasattr(r, "task") and r.task:
-            self._queue.mark_done(r.task.id)
+        task_obj = getattr(r, "task", None)
+        if task_obj is not None:
+            self._queue.mark_done(task_obj.id)
 
     def _process_dict(self, d: dict[str, Any]) -> None:
         self._stream.write(d)
@@ -257,9 +256,7 @@ class Scheduler:
             DEFAULTS.CHECKPOINT_EVERY > 0
             and self._queue.done_count % DEFAULTS.CHECKPOINT_EVERY == 0
         ):
-            self._checkpoint.save(
-                self._queue.get_done_urls(), self._queue.total_count
-            )
+            self._checkpoint.save(self._queue.get_done_urls(), self._queue.total_count)
 
     # ── finalize ──────────────────────────────────────────────────
 

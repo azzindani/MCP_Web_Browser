@@ -71,8 +71,14 @@ class DEFAULTS:
     )
 
     COLLECTIBLE_EXTENSIONS: Final[tuple[str, ...]] = (
-        ".pdf", ".xls", ".xlsx", ".csv",
-        ".zip", ".docx", ".ppt", ".pptx",
+        ".pdf",
+        ".xls",
+        ".xlsx",
+        ".csv",
+        ".zip",
+        ".docx",
+        ".ppt",
+        ".pptx",
     )
 
     CHALLENGE_TITLES: Final[tuple[str, ...]] = (

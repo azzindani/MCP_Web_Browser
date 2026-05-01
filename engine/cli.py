@@ -12,6 +12,7 @@ Usage (from repo root)::
 This file is intentionally thin — all logic lives in the Scheduler and
 engine entry-points so MCP tools and CLI share the same code paths.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,30 +34,32 @@ def _stderr(msg: str) -> None:
 
 # ── argument parser ───────────────────────────────────────────────
 
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="krawl",
         description="mcp_web_browser engine — standalone CLI",
     )
     g = p.add_mutually_exclusive_group()
-    g.add_argument("--url",    metavar="URL",   help="Fetch a single URL")
-    g.add_argument("--tasks",  metavar="FILE",  help="JSON task list file")
+    g.add_argument("--url", metavar="URL", help="Fetch a single URL")
+    g.add_argument("--tasks", metavar="FILE", help="JSON task list file")
     g.add_argument("--domain", metavar="DOMAIN", help="Domain sweep (crawl mode)")
     g.add_argument("--search", metavar="QUERY", help="FTS query against local DB")
     g.add_argument("--export", metavar="TABLE", help="Export table to file")
-    g.add_argument("--stats",  action="store_true", help="Print DB stats and exit")
+    g.add_argument("--stats", action="store_true", help="Print DB stats and exit")
 
-    p.add_argument("--db",      default="krawl.db",          help="SQLite path")
-    p.add_argument("--out",     default="krawl_output.jsonl", help="JSONL output path")
-    p.add_argument("--depth",   type=int, default=2,          help="Crawl depth")
-    p.add_argument("--limit",   type=int, default=50,         help="Max rows / pages")
-    p.add_argument("--fmt",     default="csv",                help="Export format: csv|json")
-    p.add_argument("--resume",  action="store_true",          help="Resume from checkpoint")
-    p.add_argument("--instance", default="default",           help="Instance ID")
+    p.add_argument("--db", default="krawl.db", help="SQLite path")
+    p.add_argument("--out", default="krawl_output.jsonl", help="JSONL output path")
+    p.add_argument("--depth", type=int, default=2, help="Crawl depth")
+    p.add_argument("--limit", type=int, default=50, help="Max rows / pages")
+    p.add_argument("--fmt", default="csv", help="Export format: csv|json")
+    p.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    p.add_argument("--instance", default="default", help="Instance ID")
     return p
 
 
 # ── sub-commands ────────────────────────────────────────────────
+
 
 def _open_db(db_path: str) -> tuple[sqlite3.Connection, QueryEngine]:
     path = resolve_path(db_path)
@@ -86,6 +89,7 @@ def _cmd_search(db_path: str, query: str, limit: int) -> None:
 def _cmd_export(db_path: str, table: str, fmt: str, out_dir: str = ".") -> None:
     conn, qe = _open_db(db_path)
     from engine.output.export import Exporter
+
     exp = Exporter(qe)
     if fmt == "json":
         path = exp.export_json(table, out_dir)
@@ -111,6 +115,7 @@ async def _run_tasks(args: argparse.Namespace, inputs: list[dict]) -> None:  # t
 
 
 # ── entry point ──────────────────────────────────────────────────
+
 
 def main(argv: list[str] | None = None) -> None:
     parser = _build_parser()

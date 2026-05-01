@@ -16,9 +16,7 @@ def test_snapshot_returns_none_when_missing(
     assert vc.snapshot("never_existed.db") is None
 
 
-def test_snapshot_creates_bak(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_snapshot_creates_bak(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     target = tmp_path / "data.db"
     target.write_bytes(b"original")
@@ -39,9 +37,7 @@ def test_atomic_write_text_replaces_atomically(
     assert leftovers == []
 
 
-def test_atomic_write_overwrites_existing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_atomic_write_overwrites_existing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     vc.atomic_write_bytes("file.bin", b"first")
     vc.atomic_write_bytes("file.bin", b"second")

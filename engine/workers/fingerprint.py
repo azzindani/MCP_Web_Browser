@@ -50,12 +50,8 @@ _PROFILES: tuple[BrowserProfile, ...] = (
         max_touch_points=0,
         canvas_noise=0.000012,
         webgl_vendor="Google Inc. (Intel)",
-        webgl_renderer=(
-            "ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"
-        ),
-        sec_ch_ua_full=(
-            '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-        ),
+        webgl_renderer=("ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        sec_ch_ua_full=('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
         accept_language="en-US,en;q=0.9",
     ),
     BrowserProfile(
@@ -76,9 +72,7 @@ _PROFILES: tuple[BrowserProfile, ...] = (
         canvas_noise=0.000021,
         webgl_vendor="Google Inc. (Apple)",
         webgl_renderer="ANGLE (Apple, Apple M1 Pro, OpenGL 4.1 Metal - 88)",
-        sec_ch_ua_full=(
-            '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-        ),
+        sec_ch_ua_full=('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
         accept_language="en-US,en;q=0.9",
     ),
     BrowserProfile(
@@ -98,12 +92,8 @@ _PROFILES: tuple[BrowserProfile, ...] = (
         max_touch_points=0,
         canvas_noise=0.000008,
         webgl_vendor="Google Inc. (Intel)",
-        webgl_renderer=(
-            "ANGLE (Intel, Intel(R) HD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)"
-        ),
-        sec_ch_ua_full=(
-            '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-        ),
+        webgl_renderer=("ANGLE (Intel, Intel(R) HD Graphics 620 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+        sec_ch_ua_full=('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
         accept_language="en-GB,en;q=0.9,en-US;q=0.8",
     ),
 )
@@ -126,19 +116,13 @@ _ID_PROFILE: BrowserProfile = BrowserProfile(
     max_touch_points=0,
     canvas_noise=0.000015,
     webgl_vendor="Google Inc. (Intel)",
-    webgl_renderer=(
-        "ANGLE (Intel, Intel(R) HD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"
-    ),
-    sec_ch_ua_full=(
-        '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'
-    ),
+    webgl_renderer=("ANGLE (Intel, Intel(R) HD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)"),
+    sec_ch_ua_full=('"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"'),
     accept_language="id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
 )
 
 
-def pick_profile(
-    locale: str | None = None, *, rng: random.Random | None = None
-) -> BrowserProfile:
+def pick_profile(locale: str | None = None, *, rng: random.Random | None = None) -> BrowserProfile:
     if locale and locale.startswith("id"):
         return _ID_PROFILE
     r = rng if rng is not None else random

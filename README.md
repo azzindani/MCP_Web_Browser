@@ -59,7 +59,7 @@ Tiers are toggled by environment variable. Default-on: Basic + Query
 default; enable it via `MCP_TIER_CRAWL=1` and disable Query if you need
 to stay under the cap.
 
-### Basic tier — `MCP_TIER_BASIC=1` (6 tools, default)
+### Basic tier — `MCP_TIER_BASIC=1` (7 tools, default)
 
 | Tool             | Role     | Purpose                                                |
 |------------------|----------|--------------------------------------------------------|
@@ -67,6 +67,7 @@ to stay under the cap.
 | `browse_locate`  | LOCATE   | Probe URL once, return detected mode + status.         |
 | `browse_inspect` | INSPECT  | Peek URL: title + first ~500 chars. No DB write.       |
 | `browse_fetch`   | PATCH    | Fetch + index URL. Returns surgical receipt.           |
+| `browse_extract` | PATCH    | CSS / XPath / text / regex element extraction.         |
 | `browse_verify`  | VERIFY   | Read one row from `pages` by URL.                      |
 | `browse_status`  | aux      | Engine health: pools, breaker, db.                     |
 
@@ -152,17 +153,33 @@ SDK installed.
 
 ## Development
 
+### Requirements
+
+- Python 3.11+ (CI runs 3.12)
+- [uv](https://docs.astral.sh/uv/)
+- Git
+
 ```sh
 git clone https://github.com/azzindani/mcp_web_browser.git
 cd mcp_web_browser
 uv sync
 uv run ruff check .
-uv run mypy engine shared server.py
+uv run ruff format --check .
+uv run pyright engine/ shared/ server.py
+uv run python tests/verify_tool_docstrings.py
 uv run pytest -q
 ```
 
 The unit suite runs offline (mocked httpx, in-memory SQLite). One
 integration test launches real Chromium when `MCP_BROWSER_TESTS=1`.
+
+### Platform support
+
+| Platform       | Status                             |
+|----------------|------------------------------------|
+| Windows 11     | CI-validated (GitHub Actions)      |
+| macOS          | CI-validated (GitHub Actions)      |
+| Ubuntu 22.04   | CI-validated (GitHub Actions)      |
 
 For the design and milestone tracker see [`PORT_PLAN.md`](PORT_PLAN.md)
 and [`CLAUDE.md`](CLAUDE.md). The governing standard is

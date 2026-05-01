@@ -3,6 +3,7 @@
 Import and exercise every new module to confirm nothing is broken
 before running the heavier integration / e2e suites.
 """
+
 from __future__ import annotations
 
 import io
@@ -20,8 +21,8 @@ from engine.resilience.circuit_breaker import CircuitBreaker
 from engine.resilience.rate_limiter import RateLimiter
 from engine.workers.tls import make_chrome_ssl_context
 
-
 # ── config / defaults ──────────────────────────────────────────
+
 
 def test_defaults_loads() -> None:
     assert DEFAULTS.HTTP_TIMEOUT > 0
@@ -30,6 +31,7 @@ def test_defaults_loads() -> None:
 
 
 # ── resilience ────────────────────────────────────────────────
+
 
 def test_circuit_breaker_allows_by_default() -> None:
     cb = CircuitBreaker()
@@ -49,6 +51,7 @@ def test_rate_limiter_instantiates() -> None:
 
 
 # ── task queue ────────────────────────────────────────────────
+
 
 def test_queue_enqueue_dequeue() -> None:
     q = TaskQueue()
@@ -118,6 +121,7 @@ def test_queue_snapshot_roundtrip() -> None:
 
 # ── timer ────────────────────────────────────────────────────
 
+
 def test_timer_phase_tracking() -> None:
     t = Timer("run_smoke")
     t.start_phase("http", total=5)
@@ -133,6 +137,7 @@ def test_timer_phase_tracking() -> None:
 
 # ── display ──────────────────────────────────────────────────
 
+
 def test_display_sink_writes_to_buffer() -> None:
     buf = io.StringIO()
     d = DisplaySink(buf)
@@ -146,6 +151,7 @@ def test_display_sink_writes_to_buffer() -> None:
 
 
 # ── stream writer ─────────────────────────────────────────────
+
 
 def test_stream_writer_append(tmp_path: Path) -> None:
     p = tmp_path / "out.jsonl"
@@ -168,6 +174,7 @@ def test_stream_writer_context_manager(tmp_path: Path) -> None:
 
 # ── checkpoint ───────────────────────────────────────────────
 
+
 def test_checkpoint_save_and_load(tmp_path: Path) -> None:
     cp = Checkpoint(tmp_path / "cp.json", run_id="r1")
     urls = {"https://a.com", "https://b.com"}
@@ -179,20 +186,17 @@ def test_checkpoint_save_and_load(tmp_path: Path) -> None:
 
 # ── db schema ─────────────────────────────────────────────────
 
+
 def test_schema_creates_core_tables() -> None:
     conn = sqlite3.connect(":memory:")
     init_schema(conn)
-    tables = {
-        row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-    }
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     for expected in ("pages", "stocks", "news", "files", "links", "domains", "fts_pages"):
         assert expected in tables, f"missing table: {expected}"
 
 
 # ── TLS ────────────────────────────────────────────────────────
+
 
 def test_chrome_ssl_context_builds() -> None:
     ctx = make_chrome_ssl_context()
@@ -201,9 +205,11 @@ def test_chrome_ssl_context_builds() -> None:
 
 # ── CI compliance gate ────────────────────────────────────────
 
+
 def test_no_mcp_imports_in_engine() -> None:
     """engine/** and shared/** must not import from mcp.*"""
     import re
+
     repo_root = Path(__file__).parent.parent.parent
     pattern = re.compile(r"^(from|import)\s+mcp", re.MULTILINE)
     violations: list[str] = []
@@ -217,6 +223,7 @@ def test_no_mcp_imports_in_engine() -> None:
 def test_no_stdout_from_engine_modules() -> None:
     """Engine modules must not call print() — use stderr helpers."""
     import re
+
     repo_root = Path(__file__).parent.parent.parent / "engine"
     # Allow print(..., file=sys.stderr) but not bare print to stdout
     bare_print = re.compile(r"^\s*print\((?![^)]*file=sys\.stderr)", re.MULTILINE)

@@ -84,7 +84,9 @@ def test_real_chromium_can_render_data_url() -> None:
             return None
 
         worker = await BrowserWorker.launch(
-            CircuitBreaker(), RateLimiter(sleep_fn=no_sleep), locale="en-US",
+            CircuitBreaker(),
+            RateLimiter(sleep_fn=no_sleep),
+            locale="en-US",
         )
         try:
             result = await worker.fetch_one(

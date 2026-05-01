@@ -6,13 +6,14 @@ JSON file via atomic rename so crashes never corrupt it.
 
 Mirrors core/router.ts in krawl. Uses httpx instead of Node fetch.
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -30,10 +31,11 @@ def _stderr(msg: str) -> None:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # ── probe data structures ──────────────────────────────────────────
+
 
 @dataclass
 class ProbeSignals:
@@ -61,6 +63,7 @@ class CachedEntry:
 
 # ── bot-wall detection (mirrors router.ts detectBotWall) ───────────────
 
+
 def _detect_bot_wall(body_lower: str, headers: httpx.Headers) -> str:
     if headers.get("x-datadome-cid") or "datadome" in body_lower:
         return "DataDome"
@@ -79,6 +82,7 @@ def _detect_bot_wall(body_lower: str, headers: httpx.Headers) -> str:
 
 # ── Router ─────────────────────────────────────────────────────────
 
+
 class Router:
     """Probe URLs, cache mode decisions per domain, upgrade on failure."""
 
@@ -92,9 +96,7 @@ class Router:
         if not self._cache_path.exists():
             return {}
         try:
-            raw: dict[str, Any] = json.loads(
-                self._cache_path.read_text(encoding="utf-8")
-            )
+            raw: dict[str, Any] = json.loads(self._cache_path.read_text(encoding="utf-8"))
             _stderr(f"router cache: {len(raw)} domains loaded")
             return {
                 domain: CachedEntry(
@@ -113,11 +115,11 @@ class Router:
         snapshot(self._cache_path)
         data = {
             domain: {
-                "mode"      : e.mode,
-                "signals"   : e.signals,
-                "cached_at" : e.cached_at,
+                "mode": e.mode,
+                "signals": e.signals,
+                "cached_at": e.cached_at,
                 "sample_url": e.sample_url,
-                "hit_count" : e.hit_count,
+                "hit_count": e.hit_count,
             }
             for domain, e in self._cache.items()
         }
@@ -147,8 +149,8 @@ class Router:
                 follow_redirects=True,
                 timeout=10.0,
                 headers={
-                    "User-Agent"     : DEFAULTS.USER_AGENT,
-                    "Accept"         : "text/html,application/json,*/*",
+                    "User-Agent": DEFAULTS.USER_AGENT,
+                    "Accept": "text/html,application/json,*/*",
                     "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8",
                 },
             ) as client:
@@ -166,12 +168,10 @@ class Router:
         lower = text.lower()
 
         signals.cloudflare_block = response.status_code in (403, 503) and (
-            "cloudflare" in lower
-            or any(t in lower for t in DEFAULTS.CHALLENGE_TITLES)
+            "cloudflare" in lower or any(t in lower for t in DEFAULTS.CHALLENGE_TITLES)
         )
         signals.turnstile = signals.cloudflare_block and (
-            "cf-turnstile" in lower
-            or "challenges.cloudflare.com/turnstile" in lower
+            "cf-turnstile" in lower or "challenges.cloudflare.com/turnstile" in lower
         )
         svc = _detect_bot_wall(lower, response.headers)
         signals.bot_wall = bool(svc)
@@ -191,9 +191,7 @@ class Router:
             and len(text) > 5_000
         )
         signals.http_works = (
-            response.status_code == 200
-            and not signals.cloudflare_block
-            and not signals.bot_wall
+            response.status_code == 200 and not signals.cloudflare_block and not signals.bot_wall
         )
         return signals
 
@@ -204,9 +202,9 @@ class Router:
         if s.turnstile:
             return "blocked"
         if s.cloudflare_block:
-            return "browser"   # try browser before giving up
+            return "browser"  # try browser before giving up
         if s.bot_wall:
-            return "browser"   # DataDome/PX/Akamai — browser may pass
+            return "browser"  # DataDome/PX/Akamai — browser may pass
         if s.is_json and s.http_works:
             return "http_json"
         if s.is_spa:
@@ -231,10 +229,10 @@ class Router:
         self._cache[d] = CachedEntry(
             mode=mode,
             signals={
-                "status_code"    : signals.status_code,
-                "http_works"     : signals.http_works,
-                "is_json"        : signals.is_json,
-                "is_spa"         : signals.is_spa,
+                "status_code": signals.status_code,
+                "http_works": signals.http_works,
+                "is_json": signals.is_json,
+                "is_spa": signals.is_spa,
                 "cloudflare_block": signals.cloudflare_block,
                 "bot_wall_service": signals.bot_wall_service,
                 "response_time_ms": signals.response_time_ms,
@@ -259,7 +257,4 @@ class Router:
             self._save_cache()
 
     def dump_cache(self) -> dict[str, Any]:
-        return {
-            d: {"mode": e.mode, "hit_count": e.hit_count}
-            for d, e in self._cache.items()
-        }
+        return {d: {"mode": e.mode, "hit_count": e.hit_count} for d, e in self._cache.items()}

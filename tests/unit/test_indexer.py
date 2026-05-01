@@ -41,15 +41,11 @@ def test_index_page_writes_pages_and_fts(conn: sqlite3.Connection) -> None:
         run_id="run-1",
     )
     assert "page" in report.indexed
-    page = conn.execute("SELECT * FROM pages WHERE url=?", (
-        "https://example.com/a",
-    )).fetchone()
+    page = conn.execute("SELECT * FROM pages WHERE url=?", ("https://example.com/a",)).fetchone()
     assert page is not None
     assert page["domain"] == "example.com"
     assert page["title"] == "Example"
-    fts = conn.execute(
-        "SELECT * FROM fts_pages WHERE url=?", ("https://example.com/a",)
-    ).fetchone()
+    fts = conn.execute("SELECT * FROM fts_pages WHERE url=?", ("https://example.com/a",)).fetchone()
     assert fts is not None
 
 

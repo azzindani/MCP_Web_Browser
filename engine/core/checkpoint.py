@@ -11,7 +11,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +20,7 @@ from shared.version_control import atomic_write_text
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _stderr(msg: str) -> None:
@@ -53,8 +53,7 @@ class Checkpoint:
             try:
                 raw = json.loads(self._path.read_text(encoding="utf-8"))
                 _stderr(
-                    f"checkpoint loaded: {raw.get('done_count', 0)} done "
-                    f"(run {raw.get('run_id')})"
+                    f"checkpoint loaded: {raw.get('done_count', 0)} done (run {raw.get('run_id')})"
                 )
                 return CheckpointData(
                     run_id=str(raw.get("run_id") or run_id),

@@ -12,20 +12,29 @@ import pytest
 
 import engine
 import server
-from engine.db.indexer import Indexer
 from engine.db.schema import init_schema
 
 BASIC_TOOLS = {
-    "browse_search", "browse_locate", "browse_inspect",
-    "browse_fetch", "browse_verify", "browse_status",
+    "browse_search",
+    "browse_locate",
+    "browse_inspect",
+    "browse_fetch",
+    "browse_verify",
+    "browse_status",
 }
 QUERY_TOOLS = {
-    "query_locate", "query_search", "query_select",
-    "query_export", "query_stats",
+    "query_locate",
+    "query_search",
+    "query_select",
+    "query_export",
+    "query_stats",
 }
 CRAWL_TOOLS = {
-    "crawl_locate", "crawl_plan", "crawl_run",
-    "crawl_resume", "crawl_verify",
+    "crawl_locate",
+    "crawl_plan",
+    "crawl_run",
+    "crawl_resume",
+    "crawl_verify",
 }
 
 DOCSTRING_CAP = 80
@@ -33,7 +42,7 @@ DOCSTRING_CAP = 80
 
 def _registered_tools() -> dict[str, object]:
     """Return the FastMCP tool registry as a {name: fn} mapping."""
-    mgr = server.app._tool_manager  # noqa: SLF001 — public API not yet exposed
+    mgr = server.app._tool_manager
     tools = mgr.list_tools()
     return {t.name: t for t in tools}
 
@@ -57,9 +66,7 @@ def test_every_tool_docstring_is_within_cap() -> None:
         desc = tool.description or ""
         # Strip whitespace for a fair length check.
         first_line = desc.strip().splitlines()[0] if desc.strip() else ""
-        assert len(first_line) <= DOCSTRING_CAP, (
-            f"{name}: {len(first_line)} chars: {first_line!r}"
-        )
+        assert len(first_line) <= DOCSTRING_CAP, f"{name}: {len(first_line)} chars: {first_line!r}"
 
 
 def test_no_mcp_imports_under_engine() -> None:
@@ -76,9 +83,7 @@ def test_no_mcp_imports_under_engine() -> None:
 
 
 @pytest.fixture()
-def isolated_engine(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def isolated_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Wire up an in-memory DB + mocked httpx for engine entry points."""
     monkeypatch.setenv("MCP_DATA_ROOT", str(tmp_path))
     engine.reset_runtime()
@@ -88,7 +93,7 @@ def isolated_engine(
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     init_schema(conn)
-    rt._db = conn  # noqa: SLF001 — test-only override
+    rt._db = conn
 
     def handler(request: httpx.Request) -> httpx.Response:
         path = str(request.url.path)
@@ -100,11 +105,13 @@ def isolated_engine(
             )
         if path.endswith("/missing"):
             return httpx.Response(404, content=b"missing")
-        return httpx.Response(200, content=b"<html>ok</html>",
-                              headers={"content-type": "text/html"})
+        return httpx.Response(
+            200, content=b"<html>ok</html>", headers={"content-type": "text/html"}
+        )
 
-    rt._client = httpx.AsyncClient(  # noqa: SLF001 — test-only override
-        transport=httpx.MockTransport(handler), timeout=2.0,
+    rt._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler),
+        timeout=2.0,
     )
 
     async def no_sleep(_s: float) -> None:
