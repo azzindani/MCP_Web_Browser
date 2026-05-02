@@ -14,9 +14,10 @@ logic lives in engine/**; this file only validates and dispatches.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 
 import engine
 
@@ -32,7 +33,10 @@ def _enabled(name: str, default: str) -> bool:
 if _enabled("MCP_TIER_BASIC", "1"):
 
     @app.tool()
-    async def browse_search(query: str, limit: int | None = None) -> dict[str, Any]:
+    async def browse_search(
+        query: str,
+        limit: Annotated[int, Field(default=10, ge=1, le=50, description="Max hits to return")] = 10,
+    ) -> dict[str, Any]:
         """Web search (SearXNG/DDG/Brave). Returns <=10 hits."""
         return await engine.search_web(query, limit=limit)
 
@@ -72,7 +76,7 @@ if _enabled("MCP_TIER_BASIC", "1"):
         selector: str,
         mode: str = "css",
         output_type: str = "text",
-        limit: int | None = None,
+        limit: Annotated[int, Field(default=10, ge=1, le=100, description="Max elements to extract")] = 10,
     ) -> dict[str, Any]:
         """Extract elements by CSS/XPath/text/regex selector."""
         return await engine.extract_from_url(url, selector, mode=mode, output_type=output_type, limit=limit)
@@ -88,12 +92,19 @@ if _enabled("MCP_TIER_QUERY", "1"):
         return engine.query_locate()
 
     @app.tool()
-    def query_search(query: str, table: str = "fts_pages", limit: int | None = None) -> dict[str, Any]:
+    def query_search(
+        query: str,
+        table: str = "fts_pages",
+        limit: Annotated[int, Field(default=10, ge=1, le=100, description="Max rows to return")] = 10,
+    ) -> dict[str, Any]:
         """FTS5 search across pages/news/files. <=10 rows."""
         return engine.query_search(query, table=table, limit=limit)
 
     @app.tool()
-    def query_select(sql: str, limit: int | None = None) -> dict[str, Any]:
+    def query_select(
+        sql: str,
+        limit: Annotated[int, Field(default=20, ge=1, le=100, description="Max rows to return")] = 20,
+    ) -> dict[str, Any]:
         """SELECT-only SQL (parameterless). Bounded."""
         return engine.query_select(sql, params=(), limit=limit)
 
@@ -118,15 +129,18 @@ if _enabled("MCP_TIER_CRAWL", "0"):
         return await engine.crawl_locate(url)
 
     @app.tool()
-    async def crawl_plan(url: str, max_links: int = 25) -> dict[str, Any]:
+    async def crawl_plan(
+        url: str,
+        max_links: Annotated[int, Field(default=25, ge=5, le=200, description="Max frontier links to enumerate")] = 25,
+    ) -> dict[str, Any]:
         """Dry-run BFS: enumerate would-be frontier."""
         return await engine.crawl_plan(url, max_links=max_links)
 
     @app.tool()
     async def crawl_run(
         url: str,
-        max_pages: int | None = None,
-        max_depth: int | None = None,
+        max_pages: Annotated[int, Field(default=50, ge=1, le=250, description="Max pages to crawl")] = 50,
+        max_depth: Annotated[int, Field(default=3, ge=1, le=5, description="Max BFS depth")] = 3,
         run_id: str | None = None,
     ) -> dict[str, Any]:
         """Bounded crawl. Indexes pages, returns receipt."""
@@ -138,7 +152,11 @@ if _enabled("MCP_TIER_CRAWL", "0"):
         )
 
     @app.tool()
-    async def crawl_resume(run_id: str, url: str, max_pages: int | None = None) -> dict[str, Any]:
+    async def crawl_resume(
+        run_id: str,
+        url: str,
+        max_pages: Annotated[int, Field(default=50, ge=1, le=250, description="Max additional pages to crawl")] = 50,
+    ) -> dict[str, Any]:
         """Resume a crawl run from its checkpoint."""
         return await engine.crawl_resume(run_id, url, max_pages=max_pages)
 
@@ -150,10 +168,12 @@ if _enabled("MCP_TIER_CRAWL", "0"):
     @app.tool()
     async def browse_research(
         query: str,
-        depth: int = 2,
-        fetch_top: int = 5,
-        limit: int | None = None,
-        breadth: int = 1,
+        depth: Annotated[
+            int, Field(default=2, ge=1, le=3, description="1=search only · 2=search+fetch · 3=full pipeline")
+        ] = 2,
+        fetch_top: Annotated[int, Field(default=5, ge=0, le=20, description="Top results to fetch (0=all)")] = 5,
+        limit: Annotated[int, Field(default=10, ge=1, le=50, description="Max search hits per query")] = 10,
+        breadth: Annotated[int, Field(default=1, ge=1, le=3, description="1=single · 2=multi-angle · 3=wider")] = 1,
     ) -> dict[str, Any]:
         """Deep research: search, fetch+index, link-follow, FTS passages."""
         return await engine.research_topic(query, depth=depth, fetch_top=fetch_top, limit=limit, breadth=breadth)
