@@ -74,7 +74,11 @@ The first launch clones the repo and installs dependencies (~2-5 minutes, includ
         "MCP_TIER_BASIC": "1",
         "MCP_TIER_QUERY": "1",
         "MCP_TIER_CRAWL": "0",
-        "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888"
+        "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888",
+        "MCP_SEARCH_LIMIT": "10",
+        "MCP_RESEARCH_DEPTH": "2",
+        "MCP_RESEARCH_FETCH_TOP": "5",
+        "MCP_RESEARCH_BREADTH": "1"
       },
       "timeout": 600000
     }
@@ -110,7 +114,11 @@ Replace the `"command"` and `"args"` with the bash equivalent:
         "MCP_TIER_BASIC": "1",
         "MCP_TIER_QUERY": "1",
         "MCP_TIER_CRAWL": "0",
-        "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888"
+        "MCP_SEARCH_BACKEND": "http://127.0.0.1:8888",
+        "MCP_SEARCH_LIMIT": "10",
+        "MCP_RESEARCH_DEPTH": "2",
+        "MCP_RESEARCH_FETCH_TOP": "5",
+        "MCP_RESEARCH_BREADTH": "1"
       },
       "timeout": 600000
     }
@@ -165,13 +173,13 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools).
 
 #### `browse_research` parameters
 
-| Parameter | Default | Purpose |
-|---|---|---|
-| `query` | — | Research question |
-| `depth` | `2` | `1` = search only · `2` = search + parallel-fetch + index · `3` = depth-2 + refined follow-up search |
-| `fetch_top` | `5` | How many top results to fetch at depth ≥ 2. `0` = fetch **all** results. |
-| `limit` | platform cap | Max search hits per query |
-| `breadth` | `1` | `1` = single query · `2` = multi-angle (adds year + overview variants) · `3` = wider (adds best-practices + how-it-works) |
+| Parameter | Default | Override via env | Purpose |
+|---|---|---|---|
+| `query` | — | — | Research question |
+| `depth` | `2` | `MCP_RESEARCH_DEPTH` | `1` = search only · `2` = search + parallel-fetch + index · `3` = depth-2 + refined follow-up search |
+| `fetch_top` | `5` | `MCP_RESEARCH_FETCH_TOP` | How many top results to fetch at depth ≥ 2. `0` = fetch **all** results. |
+| `limit` | `10` | `MCP_SEARCH_LIMIT` | Max search hits per query |
+| `breadth` | `1` | `MCP_RESEARCH_BREADTH` | `1` = single query · `2` = multi-angle (adds year + overview variants) · `3` = wider (adds best-practices + how-it-works) |
 
 ---
 
@@ -187,6 +195,10 @@ All limits and storage paths flow through environment variables. Defaults are tu
 | `MCP_TIER_QUERY` | `1` | Toggle the Query tier (`query_*`) |
 | `MCP_TIER_CRAWL` | `0` | Toggle the Crawl tier (`crawl_*`) |
 | `MCP_SEARCH_BACKEND` | `http://127.0.0.1:8888` | SearXNG base URL (DDG/Bing/Brave fallback) |
+| `MCP_SEARCH_LIMIT` | `10` | Default hit count for `browse_search` |
+| `MCP_RESEARCH_DEPTH` | `2` | Default depth for `browse_research` (1–3) |
+| `MCP_RESEARCH_FETCH_TOP` | `5` | Default fetch_top for `browse_research` (0=all) |
+| `MCP_RESEARCH_BREADTH` | `1` | Default breadth for `browse_research` (1–3) |
 
 ### Constrained-mode caps
 

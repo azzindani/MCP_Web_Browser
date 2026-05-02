@@ -32,3 +32,35 @@ def get_max_pages() -> int:
 
 def get_inspect_chars() -> int:
     return 500 if is_constrained_mode() else 2_000
+
+
+def get_research_depth() -> int:
+    """Default depth for browse_research. Override with MCP_RESEARCH_DEPTH."""
+    raw = os.environ.get("MCP_RESEARCH_DEPTH", "")
+    if raw.isdigit():
+        return max(1, min(3, int(raw)))
+    return 2
+
+
+def get_research_fetch_top() -> int:
+    """Default fetch_top for browse_research. Override with MCP_RESEARCH_FETCH_TOP."""
+    raw = os.environ.get("MCP_RESEARCH_FETCH_TOP", "")
+    if raw.isdigit():
+        return max(0, min(20, int(raw)))
+    return 5
+
+
+def get_research_breadth() -> int:
+    """Default breadth for browse_research. Override with MCP_RESEARCH_BREADTH."""
+    raw = os.environ.get("MCP_RESEARCH_BREADTH", "")
+    if raw.isdigit():
+        return max(1, min(3, int(raw)))
+    return 1
+
+
+def get_search_limit() -> int:
+    """Default limit for browse_search. Override with MCP_SEARCH_LIMIT."""
+    raw = os.environ.get("MCP_SEARCH_LIMIT", "")
+    if raw.isdigit():
+        return max(1, min(50, int(raw)))
+    return 10 if is_constrained_mode() else 10

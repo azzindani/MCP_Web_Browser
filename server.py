@@ -20,6 +20,12 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import Field
 
 import engine
+from shared.platform_utils import (
+    get_research_breadth,
+    get_research_depth,
+    get_research_fetch_top,
+    get_search_limit,
+)
 
 app: FastMCP = FastMCP("mcp_web_browser")
 
@@ -35,10 +41,12 @@ if _enabled("MCP_TIER_BASIC", "1"):
     @app.tool()
     async def browse_search(
         query: str,
-        limit: Annotated[int, Field(default=10, ge=1, le=50, description="Max hits to return")] = 10,
+        limit: Annotated[
+            int | None, Field(default=None, ge=1, le=50, description="Max hits (default: MCP_SEARCH_LIMIT)")
+        ] = None,
     ) -> dict[str, Any]:
         """Web search (SearXNG/DDG/Brave). Returns <=10 hits."""
-        return await engine.search_web(query, limit=limit)
+        return await engine.search_web(query, limit=limit if limit is not None else get_search_limit())
 
     @app.tool()
     async def browse_locate(url: str) -> dict[str, Any]:
@@ -169,14 +177,36 @@ if _enabled("MCP_TIER_CRAWL", "0"):
     async def browse_research(
         query: str,
         depth: Annotated[
-            int, Field(default=2, ge=1, le=3, description="1=search only · 2=search+fetch · 3=full pipeline")
-        ] = 2,
-        fetch_top: Annotated[int, Field(default=5, ge=0, le=20, description="Top results to fetch (0=all)")] = 5,
-        limit: Annotated[int, Field(default=10, ge=1, le=50, description="Max search hits per query")] = 10,
-        breadth: Annotated[int, Field(default=1, ge=1, le=3, description="1=single · 2=multi-angle · 3=wider")] = 1,
+            int | None,
+            Field(
+                default=None, ge=1, le=3, description="1=search only · 2=+fetch · 3=full (default: MCP_RESEARCH_DEPTH)"
+            ),
+        ] = None,
+        fetch_top: Annotated[
+            int | None,
+            Field(
+                default=None, ge=0, le=20, description="Top results to fetch, 0=all (default: MCP_RESEARCH_FETCH_TOP)"
+            ),
+        ] = None,
+        limit: Annotated[int | None, Field(default=None, ge=1, le=50, description="Max search hits per query")] = None,
+        breadth: Annotated[
+            int | None,
+            Field(
+                default=None,
+                ge=1,
+                le=3,
+                description="1=single · 2=multi-angle · 3=wider (default: MCP_RESEARCH_BREADTH)",
+            ),
+        ] = None,
     ) -> dict[str, Any]:
         """Deep research: search, fetch+index, link-follow, FTS passages."""
-        return await engine.research_topic(query, depth=depth, fetch_top=fetch_top, limit=limit, breadth=breadth)
+        return await engine.research_topic(
+            query,
+            depth=depth if depth is not None else get_research_depth(),
+            fetch_top=fetch_top if fetch_top is not None else get_research_fetch_top(),
+            limit=limit,
+            breadth=breadth if breadth is not None else get_research_breadth(),
+        )
 
 
 def main() -> None:
