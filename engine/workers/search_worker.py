@@ -109,9 +109,16 @@ _DDG_LITE_SNIPPET_RE = re.compile(
     re.DOTALL,
 )
 
-# Bing result titles are always in <h2><a href="...">. No class dependency.
+# Bing S1: classic <h2><a href="url">title</a></h2>
 _BING_H2_RE = re.compile(r"<h2[^>]*>\s*<a[^>]+href=\"([^\"]+)\"[^>]*>(.*?)</a>", re.DOTALL)
 _BING_SNIPPET_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.DOTALL)
+# Bing S2: b_algo block split (newer layouts, incl. <a href><h2> reversed nesting)
+_BING_ALGO_BLOCK_RE = re.compile(
+    r"<li\b[^>]+\bclass=\"[^\"]*\bb_algo\b[^\"]*\"[^>]*>(.*?)</li>",
+    re.DOTALL,
+)
+_BING_ANY_HREF_RE = re.compile(r"href=\"(https?://[^\"]+)\"")
+_BING_H2_TEXT_RE = re.compile(r"<h2[^>]*>(.*?)</h2>", re.DOTALL)
 
 _BRAVE_RESULT_RE = re.compile(
     r'<div[^>]+data-type="web"[^>]*>.*?'
@@ -201,25 +208,51 @@ def _resolve_bing_redirect(href: str) -> str:
     return href
 
 
+def _bing_is_internal(href: str) -> bool:
+    return "bing.com" in href and "bing.com/ck/a" not in href
+
+
 def _parse_bing(body: str, cap: int) -> list[SearchHit]:
     hits: list[SearchHit] = []
+
+    # S1: classic <h2><a href="url">title</a></h2>
     for m in _BING_H2_RE.finditer(body):
         if len(hits) >= cap:
             break
         href = _resolve_bing_redirect(unescape(m.group(1)))
-        if not href.startswith("http"):
+        if not href.startswith("http") or _bing_is_internal(href):
             continue
-        if "bing.com" in href and "bing.com/ck/a" not in href:
-            continue  # skip Bing-internal navigation links
         title = _strip_tags(m.group(2))
         if not title:
             continue
-        # Look for snippet in the 800 chars after this title
         after = body[m.end() : m.end() + 800]
         snip_m = _BING_SNIPPET_RE.search(after)
         snippet = _strip_tags(snip_m.group(1)) if snip_m else ""
         hits.append(SearchHit(title=title, url=href, snippet=snippet, backend="bing"))
-    # Diversity guard: ≥90 % from the same domain+path_seg → bot-detection page.
+
+    # S2: b_algo block split — handles newer Bing reversed <a href><h2> nesting
+    if not hits:
+        seen_urls: set[str] = set()
+        for block_m in _BING_ALGO_BLOCK_RE.finditer(body):
+            if len(hits) >= cap:
+                break
+            btext = block_m.group(1)
+            href_m = _BING_ANY_HREF_RE.search(btext)
+            if not href_m:
+                continue
+            href = _resolve_bing_redirect(unescape(href_m.group(1)))
+            if not href.startswith("http") or _bing_is_internal(href) or href in seen_urls:
+                continue
+            seen_urls.add(href)
+            title_m = _BING_H2_TEXT_RE.search(btext)
+            title = _strip_tags(title_m.group(1)) if title_m else ""
+            if not title or len(title) < 3:
+                continue
+            snip_m = _BING_SNIPPET_RE.search(btext)
+            snippet = _strip_tags(snip_m.group(1)) if snip_m else ""
+            hits.append(SearchHit(title=title, url=href, snippet=snippet, backend="bing"))
+
+    # Diversity guard: ≥90 % from same domain+path_seg → likely a bot-detection page.
     if len(hits) >= 5:
         from collections import Counter
 

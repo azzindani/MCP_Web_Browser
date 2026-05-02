@@ -1058,6 +1058,7 @@ async def research_topic(
     last_backend = "none"
     last_sw: dict[str, Any] = {}
 
+    first_fail_sw: dict[str, Any] | None = None
     for qi, q in enumerate(queries):
         sw = await search_web(q, limit=cap)
         if sw.get("ok") and sw.get("hits"):
@@ -1067,22 +1068,26 @@ async def research_topic(
             last_backend = str(sw.get("backend", "unknown"))
             last_sw = sw
             progress.append(ok("Search", f"[q{qi + 1}] {len(new)} new hits via {last_backend}"))
-        elif qi == 0:
-            backend_errors = sw.get("backend_errors", [])
-            no_results: dict[str, Any] = {
-                "ok": False,
-                "op": "browse_research",
-                "query": query,
-                "error": "search_failed",
-                "hint": "All search backends failed. Try browse_status() to diagnose.",
-                "backend_errors": backend_errors,
-                "progress": [fail("Search failed", "all backends returned 0 hits")],
-                "suggested_next": [next_step("browse_status", "check engine health")],
-            }
-            no_results["token_estimate"] = _tok(no_results)
-            return no_results
         else:
             errors.append(f"angle[{qi + 1}] search failed: {sw.get('error', 'no hits')}")
+            if first_fail_sw is None:
+                first_fail_sw = sw
+
+    # Fail only when every angle returned nothing.
+    if not all_hits:
+        fatal = first_fail_sw or {}
+        no_results: dict[str, Any] = {
+            "ok": False,
+            "op": "browse_research",
+            "query": query,
+            "error": "search_failed",
+            "hint": "All search backends failed. Try browse_status() to diagnose.",
+            "backend_errors": fatal.get("backend_errors", []),
+            "progress": [fail("Search failed", f"all {len(queries)} angle(s) returned 0 hits")],
+            "suggested_next": [next_step("browse_status", "check engine health")],
+        }
+        no_results["token_estimate"] = _tok(no_results)
+        return no_results
 
     # Dedup: max 2 results per domain
     deduped_hits = _dedup_by_domain(all_hits, max_per_domain=2)

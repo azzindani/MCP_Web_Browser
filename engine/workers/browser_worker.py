@@ -631,6 +631,9 @@ class BrowserWorker:
             await context.close()
             if hits:
                 self._breaker.success(domain)
+            else:
+                # 0 results = captcha/bot-block — open circuit to skip on retry.
+                self._breaker.failure(domain)
             return hits
         except Exception as exc:
             try:
