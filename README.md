@@ -188,7 +188,7 @@ All limits and storage paths flow through environment variables. Defaults are tu
 | `MCP_TIER_CRAWL` | `0` | Toggle the Crawl tier (`crawl_*`) |
 | `MCP_SEARCH_BACKEND` | `http://127.0.0.1:8888` | SearXNG base URL (DDG/Bing/Brave fallback) |
 | `MCP_SEARCH_LANG` | `en-US` | BCP-47 language tag for Bing results (e.g. `id`, `ja`) |
-| `MCP_SEARCH_MARKET` | _(unset = global)_ | Bing market code for regional results (e.g. `id-ID`, `ja-JP`) |
+| `MCP_SEARCH_MARKET` | `en-US` | Bing market code. Default forces English global results regardless of IP location. Override for regional results (e.g. `id-ID`, `ja-JP`) |
 
 ### Constrained-mode caps
 

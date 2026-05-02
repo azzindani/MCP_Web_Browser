@@ -46,10 +46,11 @@ _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
 # MCP_SEARCH_LANG   — BCP-47 language tag for Bing setlang (default: en-US).
-# MCP_SEARCH_MARKET — Bing market code, e.g. id-ID, ja-JP (optional; omit for
-#                     global results in the chosen language).
+# MCP_SEARCH_MARKET — Bing market code (default: en-US for English global
+#                     results regardless of IP location). Override with e.g.
+#                     id-ID for Indonesian results or ja-JP for Japanese.
 _SEARCH_LANG: Final[str] = os.environ.get("MCP_SEARCH_LANG", "en-US")
-_SEARCH_MARKET: Final[str | None] = os.environ.get("MCP_SEARCH_MARKET") or None
+_SEARCH_MARKET: Final[str] = os.environ.get("MCP_SEARCH_MARKET") or "en-US"
 
 # Fail fast — DDG/Brave consistently fail; don't burn time waiting.
 _SEARCH_TIMEOUT: Final[float] = 4.0
@@ -252,18 +253,13 @@ def _parse_bing(body: str, cap: int) -> list[SearchHit]:
             snippet = _strip_tags(snip_m.group(1)) if snip_m else ""
             hits.append(SearchHit(title=title, url=href, snippet=snippet, backend="bing"))
 
-    # Diversity guard: ≥90 % from same domain+path_seg → likely a bot-detection page.
+    # Diversity guard: ≥80 % from the same hostname → geo-bias or bot-detection page.
     if len(hits) >= 5:
         from collections import Counter
 
-        def _key(h: SearchHit) -> str:
-            p = urlparse(h.url)
-            seg = p.path.lstrip("/").split("/")[0] if p.path.strip("/") else ""
-            return f"{p.netloc}/{seg}"
-
-        counts = Counter(_key(h) for h in hits)
-        top_count = counts.most_common(1)[0][1]
-        if top_count / len(hits) >= 0.9:
+        domain_counts = Counter(urlparse(h.url).hostname or "" for h in hits)
+        top_domain_count = domain_counts.most_common(1)[0][1]
+        if top_domain_count / len(hits) >= 0.8:
             return []
     return hits
 
