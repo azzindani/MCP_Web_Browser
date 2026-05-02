@@ -45,12 +45,6 @@ _BING_URL: Final[str] = "https://www.bing.com/search"
 _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
-# MCP_SEARCH_LANG   — BCP-47 language tag for Bing setlang (default: en-US).
-# MCP_SEARCH_MARKET — Bing market code (optional). When unset, Bing uses
-#                     IP-based detection; set to e.g. id-ID or ja-JP to
-#                     pin to a specific regional index.
-_SEARCH_LANG: Final[str] = os.environ.get("MCP_SEARCH_LANG", "en-US")
-_SEARCH_MARKET: Final[str | None] = os.environ.get("MCP_SEARCH_MARKET") or None
 
 # Fail fast — DDG/Brave consistently fail; don't burn time waiting.
 _SEARCH_TIMEOUT: Final[float] = 4.0
@@ -420,10 +414,8 @@ class SearchWorker:
         if not self._breaker.allow(domain):
             raise RuntimeError(f"{domain} circuit open")
         await self._limiter.acquire(domain)
-        bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.bing.com/", "Accept-Language": "en-US,en;q=0.9"}
-        bing_params: dict[str, str] = {"q": query, "count": str(cap), "setlang": _SEARCH_LANG}
-        if _SEARCH_MARKET:
-            bing_params["mkt"] = _SEARCH_MARKET
+        bing_headers = {**_SEARCH_HEADERS, "Referer": "https://www.bing.com/"}
+        bing_params: dict[str, str] = {"q": query, "count": str(cap)}
         if _CURL_CFFI:
             status, body = await _curl_search_get(_BING_URL, bing_params, bing_headers)
         else:
