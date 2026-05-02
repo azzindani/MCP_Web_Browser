@@ -1113,16 +1113,21 @@ async def research_topic(
         "progress": progress,
         "handover": {
             "instruction": (
-                "Synthesize the sources above into a coherent, well-structured answer. "
-                "Use text_preview fields for detail where available. "
+                "You MUST make additional tool calls before answering. "
+                "Call browse_fetch on each URL listed in unfetched_sources below to get full content. "
+                "Then synthesize all fetched text_previews into a coherent answer. "
                 "End your response with a '## Sources' section using the cite_format below."
             ),
             "cite_format": cite_format,
         },
         "suggested_next": [
-            next_step("browse_research", "run a follow-up research query to go deeper"),
-            next_step("browse_fetch", "fetch an additional result URL manually"),
-            next_step("query_search", "full-text search across all indexed pages"),
+            {"tool": "browse_fetch", "url": s["url"], "reason": f"[{s['rank']}] fetch full content — {s['title'][:50]}"}
+            for s in sources
+            if not s["fetched"]
+        ][:5]
+        + [next_step("browse_research", "follow-up research query to go deeper")],
+        "unfetched_sources": [
+            {"rank": s["rank"], "title": s["title"], "url": s["url"]} for s in sources if not s["fetched"]
         ],
         "carry_forward": {
             "query": query,
