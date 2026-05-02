@@ -46,11 +46,11 @@ _DDG_LITE_URL: Final[str] = "https://lite.duckduckgo.com/lite/"
 _BRAVE_URL: Final[str] = "https://search.brave.com/search"
 
 # MCP_SEARCH_LANG   — BCP-47 language tag for Bing setlang (default: en-US).
-# MCP_SEARCH_MARKET — Bing market code (default: en-US for English global
-#                     results regardless of IP location). Override with e.g.
-#                     id-ID for Indonesian results or ja-JP for Japanese.
+# MCP_SEARCH_MARKET — Bing market code (optional). When unset, Bing uses
+#                     IP-based detection; set to e.g. id-ID or ja-JP to
+#                     pin to a specific regional index.
 _SEARCH_LANG: Final[str] = os.environ.get("MCP_SEARCH_LANG", "en-US")
-_SEARCH_MARKET: Final[str] = os.environ.get("MCP_SEARCH_MARKET") or "en-US"
+_SEARCH_MARKET: Final[str | None] = os.environ.get("MCP_SEARCH_MARKET") or None
 
 # Fail fast — DDG/Brave consistently fail; don't burn time waiting.
 _SEARCH_TIMEOUT: Final[float] = 4.0
@@ -149,6 +149,28 @@ def _is_block_page(body: str) -> bool:
     """Return True if the response looks like an ISP block or bot-check page."""
     head = body[:600].lower()
     return any(t in head for t in _BLOCK_PAGE_TITLES)
+
+
+def _has_cjk(text: str) -> bool:
+    return any(
+        0x4E00 <= ord(c) <= 0x9FFF  # CJK Unified Ideographs
+        or 0x3040 <= ord(c) <= 0x30FF  # Hiragana + Katakana
+        or 0xAC00 <= ord(c) <= 0xD7FF  # Hangul
+        for c in text
+    )
+
+
+def _query_is_latin(query: str) -> bool:
+    """True if the query is ≥80 % ASCII letter characters."""
+    letters = [c for c in query if c.isalpha()]
+    return bool(letters) and sum(1 for c in letters if c.isascii()) / len(letters) >= 0.8
+
+
+def _results_are_cjk(hits: list[SearchHit]) -> bool:
+    """True if ≥60 % of result titles contain CJK characters."""
+    if not hits:
+        return False
+    return sum(1 for h in hits if _has_cjk(h.title)) / len(hits) >= 0.6
 
 
 def _strip_tags(s: str) -> str:
@@ -253,13 +275,13 @@ def _parse_bing(body: str, cap: int) -> list[SearchHit]:
             snippet = _strip_tags(snip_m.group(1)) if snip_m else ""
             hits.append(SearchHit(title=title, url=href, snippet=snippet, backend="bing"))
 
-    # Diversity guard: ≥80 % from the same hostname → geo-bias or bot-detection page.
+    # Bot-detection guard: results pointing back to bing.com itself → block page.
     if len(hits) >= 5:
         from collections import Counter
 
         domain_counts = Counter(urlparse(h.url).hostname or "" for h in hits)
-        top_domain_count = domain_counts.most_common(1)[0][1]
-        if top_domain_count / len(hits) >= 0.8:
+        top_domain, top_count = domain_counts.most_common(1)[0]
+        if "bing.com" in (top_domain or "") and top_count / len(hits) >= 0.8:
             return []
     return hits
 
@@ -350,6 +372,11 @@ class SearchWorker:
                 hits = await self._brave(query, cap)
             else:
                 hits = []
+            # Script-mismatch guard: reject CJK results for a Latin-script query.
+            # Applies to every backend — Bing, DDG, Brave all geo-bias toward CJK
+            # from Asian IPs even for English queries.
+            if hits and _query_is_latin(query) and _results_are_cjk(hits):
+                return [], "script mismatch: Latin query got CJK results"
             return hits, "" if hits else "no results parsed"
         except Exception as exc:  # noqa: BLE001
             return [], f"{type(exc).__name__}: {exc}"
