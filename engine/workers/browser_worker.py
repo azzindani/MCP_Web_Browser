@@ -583,7 +583,7 @@ class BrowserWorker:
             query=query,
             cap=cap,
             domain="www.google.com",
-            search_url=f"https://www.google.com/search?q={quote_plus(query)}&hl=en&gl=us",
+            search_url=f"https://www.google.com/search?q={quote_plus(query)}",
             wait_selector="div.g, h3, [data-sokoban-container]",
             evaluator=_EVAL_GOOGLE_SEARCH,
         )
@@ -617,6 +617,7 @@ class BrowserWorker:
         await page.add_init_script(build_stealth_script(self._profile))
         try:
             await page.goto(search_url, wait_until="domcontentloaded", timeout=20_000)
+            await self._dismiss_overlays(page)
             try:
                 await page.wait_for_selector(wait_selector, timeout=8_000)
             except Exception:
