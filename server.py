@@ -155,7 +155,7 @@ if _enabled("MCP_TIER_CRAWL", "0"):
         limit: int | None = None,
         breadth: int = 1,
     ) -> dict[str, Any]:
-        """Deep research: multi-angle search, parallel fetch+index, citations."""
+        """Deep research: search, fetch+index, link-follow, FTS passages."""
         return await engine.research_topic(query, depth=depth, fetch_top=fetch_top, limit=limit, breadth=breadth)
 
 

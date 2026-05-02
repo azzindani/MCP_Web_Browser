@@ -1001,6 +1001,38 @@ async def extract_from_url(
 
 # ── Research tier ─────────────────────────────────────────────────────────────
 
+_DEPTH3_FOLLOW_LINKS = 8  # max cross-domain links to follow at depth=3
+
+_NOISE_DOMAINS: frozenset[str] = frozenset(
+    {
+        "facebook.com",
+        "twitter.com",
+        "x.com",
+        "instagram.com",
+        "youtube.com",
+        "tiktok.com",
+        "linkedin.com",
+        "pinterest.com",
+        "tumblr.com",
+        "reddit.com",
+        "t.co",
+    }
+)
+
+
+def _is_noise_url(url: str) -> bool:
+    if not url.startswith("http"):
+        return True
+    dom = urlparse(url).hostname or ""
+    base = ".".join(dom.split(".")[-2:]) if dom.count(".") >= 1 else dom
+    return base in _NOISE_DOMAINS
+
+
+def _url_relevance(url: str, terms: set[str]) -> float:
+    """Score a URL by how many query terms appear in its path."""
+    path = urlparse(url.lower()).path
+    return sum(1.0 for t in terms if t in path)
+
 
 def _research_queries(query: str, breadth: int) -> list[str]:
     """Generate up to breadth search angles (no LLM — keyword expansion only)."""
@@ -1104,7 +1136,9 @@ async def research_topic(
         for i, h in enumerate(deduped_hits)
     ]
 
-    # ── Step 2: parallel fetch + index ───────────────────────────────────────
+    # ── Phase 2: parallel fetch + index, capture outbound links ─────────────
+    page_links: dict[str, list[str]] = {}  # url → outbound links (for Phase 3a)
+
     if depth >= 2 and sources:
         n_fetch = len(sources) if fetch_top == 0 else min(fetch_top, len(sources))
         fetch_tasks = [rt.http_worker().fetch_one(Task(url=sources[i]["url"])) for i in range(n_fetch)]
@@ -1138,12 +1172,13 @@ async def research_topic(
                     },
                     run_id="research",
                 )
+                page_links[url_i] = result.links[:50]
                 progress.append(ok("Fetched+indexed", f"[{rank_i}] {url_i}"))
             else:
                 errors.append(f"fetch[{rank_i}]: {result.error or result.status}")
                 progress.append(warn("Fetch skipped", f"[{rank_i}] {result.error or 'error'}"))
 
-    # ── Step 3: optional refined follow-up search ─────────────────────────────
+    # ── Phase 3: refined follow-up search (depth=3) ───────────────────────────
     if depth >= 3:
         fetched_context = " ".join(
             (s.get("text_preview") or s.get("snippet") or "")[:80] for s in sources if s["fetched"]
@@ -1171,6 +1206,96 @@ async def research_topic(
         except Exception as exc:  # noqa: BLE001
             errors.append(f"refined_search: {exc}")
 
+    # ── Phase 3a: link following — fetch top outbound links (depth=3) ─────────
+    if depth >= 3 and page_links:
+        import re as _re
+
+        query_terms = {t for t in _re.sub(r"[^\w\s]", "", query).lower().split() if len(t) >= 3}
+        link_scores: dict[str, float] = {}
+        for src_url, links in page_links.items():
+            src_dom = urlparse(src_url).hostname or ""
+            for link in links:
+                if link in seen_urls or link in link_scores or _is_noise_url(link):
+                    continue
+                link_dom = urlparse(link).hostname or ""
+                score = _url_relevance(link, query_terms)
+                # Prefer external cross-domain links — they add new perspectives
+                if link_dom != src_dom:
+                    score += 0.5
+                if score > 0:
+                    link_scores[link] = score
+
+        # Dedup by domain (1 per domain) and take top _DEPTH3_FOLLOW_LINKS
+        sorted_links = sorted(link_scores, key=lambda u: link_scores[u], reverse=True)
+        domain_seen: dict[str, int] = {}
+        follow_urls: list[str] = []
+        for u in sorted_links:
+            dom = urlparse(u).hostname or ""
+            if domain_seen.get(dom, 0) < 1:
+                follow_urls.append(u)
+                domain_seen[dom] = 1
+            if len(follow_urls) >= _DEPTH3_FOLLOW_LINKS:
+                break
+
+        if follow_urls:
+            follow_tasks = [rt.http_worker().fetch_one(Task(url=u)) for u in follow_urls]
+            follow_results = await asyncio.gather(*follow_tasks, return_exceptions=True)
+
+            for j, result in enumerate(follow_results):
+                url_j = follow_urls[j]
+                if isinstance(result, BaseException):
+                    errors.append(f"follow_link[{j + 1}]: {result}")
+                elif result.status == "ok":
+                    preview = ""
+                    if isinstance(result.extracted, dict):
+                        preview = str(result.extracted.get("text_preview") or "")[:_RESEARCH_PREVIEW]
+                    rank = len(sources) + 1
+                    sources.append(
+                        {
+                            "rank": rank,
+                            "title": result.title or url_j,
+                            "url": result.url,
+                            "snippet": preview[:200],
+                            "fetched": True,
+                            "text_preview": preview,
+                            "via": "link_follow",
+                        }
+                    )
+                    seen_urls.add(url_j)
+                    rt.indexer().index(
+                        {
+                            "url": result.url,
+                            "title": result.title,
+                            "status": result.status,
+                            "mode": result.mode,
+                            "elapsed_ms": result.elapsed_ms,
+                            "extracted": result.extracted,
+                            "group": result.group,
+                            "ticker": result.ticker,
+                            "extractedAt": result.extracted_at,
+                        },
+                        run_id="research",
+                    )
+                    progress.append(ok("Followed+indexed", f"link → {url_j}"))
+
+    # ── Phase 4: FTS enrichment — retrieve key passages from indexed content ──
+    key_passages: list[dict[str, Any]] = []
+    fetched_so_far = [s for s in sources if s["fetched"]]
+    if fetched_so_far:
+        try:
+            fts_rows = rt.query().search(query, table="fts_pages", limit=10)
+            key_passages = [
+                {
+                    "url": str(r.get("url", "")),
+                    "title": str(r.get("title", "")),
+                    "passage": str(r.get("content") or "")[:400],
+                }
+                for r in fts_rows
+                if r.get("url")
+            ]
+        except Exception:  # noqa: BLE001
+            pass
+
     # ── Build output ──────────────────────────────────────────────────────────
     fetched = [s for s in sources if s["fetched"]]
     unfetched = [s for s in sources if not s["fetched"]]
@@ -1187,15 +1312,17 @@ async def research_topic(
         "total_sources": len(sources),
         "fetched_count": len(fetched),
         "sources": sources,
+        "key_passages": key_passages,
         "cite_hints": cite_hints,
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "progress": progress,
         "handover": {
             "instruction": (
-                f"{len(fetched)} sources fetched and indexed into the knowledge base. "
-                "Read text_preview in each fetched source for a content digest. "
-                "Use query_search to retrieve full text from any indexed page. "
-                "Call browse_fetch on high-value unfetched URLs for more content. "
+                f"{len(fetched)} sources fetched and indexed. "
+                f"{len(key_passages)} key passages extracted by full-text search. "
+                "Read key_passages for the most relevant content, then text_preview "
+                "in each fetched source for broader context. "
+                "Call query_search to retrieve full text from any indexed page. "
                 "End your response with a '## Sources' section using cite_format."
             ),
             "cite_format": cite_format,
