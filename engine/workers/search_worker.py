@@ -109,12 +109,10 @@ _DDG_LITE_SNIPPET_RE = re.compile(
     re.DOTALL,
 )
 
-_BING_RESULT_RE = re.compile(
-    r'<li[^>]+class="b_algo[^"]*"[^>]*>.*?'
-    r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>.*?'
-    r'(?:<p[^>]*>(.*?)</p>|<div[^>]+class="b_caption[^"]*"[^>]*>.*?<p[^>]*>(.*?)</p>)',
-    re.DOTALL,
-)
+# Split on any tag that carries b_algo (Bing uses <li> or <div> depending on layout).
+_BING_BLOCK_RE = re.compile(r'<(?:li|div)[^>]+class=["\'][^"\']*b_algo[^"\']*["\']', re.DOTALL)
+_BING_LINK_RE = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
+_BING_SNIPPET_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.DOTALL)
 
 _BRAVE_RESULT_RE = re.compile(
     r'<div[^>]+data-type="web"[^>]*>.*?'
@@ -205,25 +203,23 @@ def _resolve_bing_redirect(href: str) -> str:
 
 
 def _parse_bing(body: str, cap: int) -> list[SearchHit]:
+    # Split body on b_algo block boundaries; each segment after the first is one result.
+    parts = _BING_BLOCK_RE.split(body)
     hits: list[SearchHit] = []
-    for match in _BING_RESULT_RE.finditer(body):
+    for block in parts[1:]:
         if len(hits) >= cap:
             break
-        href = _resolve_bing_redirect(unescape(match.group(1)))
-        raw_title = match.group(2)
-        raw_snippet = match.group(3) or match.group(4) or ""
+        link_m = _BING_LINK_RE.search(block)
+        if not link_m:
+            continue
+        href = _resolve_bing_redirect(unescape(link_m.group(1)))
         if not href.startswith("http"):
             continue
-        hits.append(
-            SearchHit(
-                title=_strip_tags(raw_title),
-                url=href,
-                snippet=_strip_tags(raw_snippet),
-                backend="bing",
-            )
-        )
-    # Diversity guard: ≥90 % of results from the same domain+path_seg indicates
-    # Bing served a bot-detection fallback page, not real results.
+        title = _strip_tags(link_m.group(2))
+        snippet_m = _BING_SNIPPET_RE.search(block)
+        snippet = _strip_tags(snippet_m.group(1)) if snippet_m else ""
+        hits.append(SearchHit(title=title, url=href, snippet=snippet, backend="bing"))
+    # Diversity guard: ≥90 % from the same domain+path_seg → bot-detection page.
     if len(hits) >= 5:
         from collections import Counter
 
