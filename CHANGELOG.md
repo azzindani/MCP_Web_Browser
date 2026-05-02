@@ -1,142 +1,87 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## v0.1.0 — 2026-05-02
+
+First public release. A self-hosted MCP server that gives local LLMs end-to-end web access — no cloud APIs, no API keys.
 
 ---
 
-## [0.1.3] — 2026-05-01
+### Features
 
-### Fix: `browse_search` — TLS fingerprint impersonation for DDG and Brave
+#### Web Search
+- Keyless search chain: SearXNG → DuckDuckGo → Bing → Brave → Playwright browser fallback (Google, then DDG)
+- Playwright stealth browser fallback activates automatically when all HTTP backends fail or return 0 results
+- Circuit breaker trips on captcha/bot-block to avoid hammering blocked endpoints
+- Script-mismatch guard: rejects results in the wrong writing system (e.g. CJK results for a Latin query)
+- Robust Bing parser with dual-strategy HTML extraction (handles both old and new Bing layouts)
+- Current date injected into queries for time-sensitive searches
 
-Search backends DDG and Brave were still failing because:
-1. Plain `httpx` triggers bot-detection TLS fingerprinting on DDG/Brave.
-2. `curl_cffi`'s `AsyncSession` silently fails on Windows Proactor event loops.
+#### Deep Research (`browse_research`)
+- Full pipeline: multi-angle search → parallel fetch + index → link following → FTS key-passage extraction
+- `depth` levels: `1` = search only · `2` = search + parallel-fetch + index · `3` = full pipeline with link following and FTS enrichment
+- `breadth` levels: `1` = single query · `2` = multi-angle (adds year + overview variants) · `3` = wider (adds best-practices + how-it-works angles)
+- Domain deduplication in both search results and link following (max 2 per domain from search, max 1 per domain for links)
+- Noise-domain filter strips social/video sites from link candidates
+- Returns `sources[]`, `cite_hints`, `key_passages`, and a ready-to-paste `## Sources` block
+- Unfetched sources and prescriptive `suggested_next` included in handover payload for multi-turn chaining
 
-Both backends now use `curl_cffi`'s **sync** `Session` via `asyncio.to_thread()`,
-which works correctly on all platforms including Windows. `httpx` is kept as a
-fallback if `curl_cffi` is not installed.
+#### Fetch & Rendering
+- `httpx` with HTTP/2 and TLS fingerprint impersonation via `curl_cffi`
+- Playwright stealth browser for JavaScript-heavy / SPA pages (canvas, WebGL, battery spoofing)
+- Block-page detection to avoid indexing error pages
 
-Backend errors are now surfaced in `backend_errors` on every failed response,
-so the exact failure reason (HTTP status, exception type) is visible.
+#### Domain Crawl
+- BFS crawl with configurable max pages and max depth
+- Checkpoint-resume: interrupted crawls can be resumed from the last saved frontier
+- File discovery: indexes PDFs, XLSX, CSV, and other linked documents
 
-### Fix: `browse_search` — current date injected into every response
+#### Knowledge Base
+- SQLite + FTS5, WAL mode, `busy_timeout=5000`
+- SHA-256 deduplication at index time
+- Atomic JSONL/checkpoint writes via rename pattern
+- `snapshot()` called before every persistent write
 
-Every `browse_search` response now includes:
+#### Tool Surface — 19 tools across 3 tiers
 
-```json
-{
-  "current_date": "2026-05-01",
-  "current_year": 2026,
-  "date_hint": "Today is Thursday, 2026-05-01. Prefer sources from 2026."
-}
-```
-
-The model sees the correct year in the same response as the search results,
-preventing stale-year queries (e.g. "best sectors 2024/2025").
-
----
-
-## [0.1.2] — 2026-05-01
-
-### New: `browse_datetime` tool — current date and time context
-
-Adds a lightweight tool to the Basic tier that returns the current date,
-time, day of week, and configured timezone. Lets the model formulate
-date-aware queries ("best sectors to invest in 2025") without guessing
-the current year.
-
-```json
-{
-  "date": "2026-05-01",
-  "day_of_week": "Thursday",
-  "time": "14:30:00",
-  "timezone": "Asia/Jakarta",
-  "hint": "Today is Thursday, 2026-05-01. Use this for date-aware queries."
-}
-```
-
-### Fix: `browse_search` — all backends failing
-
-- **DDG**: switched from `html.duckduckgo.com/html/` (POST, unreliable,
-  bot-blocked) to `lite.duckduckgo.com/lite/` (GET, more stable, simpler HTML)
-- **All backends**: added browser-like request headers (`Accept`, `Accept-Language: en-US`,
-  `Accept-Encoding`, `DNT`, `Upgrade-Insecure-Requests`) — prevents CAPTCHA / bot walls
-- **Timeout**: reduced per-backend timeout from 15 s → 8 s so the fallback
-  chain (SearXNG → DDG → Brave) completes in ~16 s worst case instead of ~45 s
-
----
-
-## [0.1.1] — 2026-05-01
-
-### New: `browse_extract` tool — structured element extraction (Basic tier)
-
-Adds a CSS / XPath / text / regex extraction tool to the Basic tier. The model
-can now extract specific elements from a fetched page without receiving the
-entire DOM — keeping responses within the token budget.
-
-**Tool:** `browse_extract` (PATCH role, Basic tier)
-
-**New dev dependencies:** `lxml>=4.9`, `cssselect>=1.2`
-
-### Standards alignment (mirrors `MCP_Data_Analyst`)
-
-- **Python pinned to `==3.12.*`** (was `>=3.11`) for reproducible builds
-- **Switched type checker from mypy to pyright** (`pyrightconfig.json` added; basic mode)
-- **Ruff rules simplified** to `E, F, W, I, UP` with `E402/E501/F401/F841` ignores
-- **Line length raised to 120** (from 100) — matches project standard
-- **Dev deps moved to `[dependency-groups]`** (PEP 735 / uv native)
-- **`[tool.uv] required-version = ">=0.5"`** added
-- **`[tool.coverage.run]`** added
-
-### CI improvements
-
-- **Multi-OS matrix** — now tests ubuntu-22.04, macos-latest, windows-latest
-- **Compliance gates use `shell: bash`** — run on all OSes (no Linux-only skip)
-- **Added `engine/cli.py` exclusion** in stdout compliance gate
-- **Full test suite (`tests/`)** run in both standard and constrained CI jobs
-- **`tests/verify_tool_docstrings.py`** — rewritten: handles async tools, better decorator detection
-- **Added `release.yml`** — tag-triggered GitHub release with auto-changelog
-
-### Documentation and install
-
-- **README fully rewritten** — mirrors Data_Analyst structure: platform support table,
-  Windows-first PowerShell install, pre-install command, macOS/Linux bash alternative,
-  usage examples, architecture tree, full CI sequence in Development section
-- **`mcp.json` updated** — inline PowerShell self-updating launcher (clone-or-pull +
-  sync + playwright install + run); bash alternative in README
-- **`CHANGELOG.md`** added
-- **`.gitattributes`** added — LF everywhere, CRLF for `.bat`
-- **`.gitignore`** updated — adds `.mcp_versions/`, `*.mcp_state.json`, `*.mcp_receipt.json`
-
----
-
-## [0.1.0] — 2026-05-01
-
-### Initial release
-
-MCP Web Browser v0.1.0 is the first production-ready release of a local-first
-self-hosted MCP server for end-to-end web access. It gives a language model
-structured, surgical access to the web through 16 deterministic tools across
-three tiers — without ever sending data to a cloud API.
-
-| Tier | Tools | Purpose |
+| Tier | Tools | Default |
 |---|---|---|
-| `mcp_web_browser_basic` | 6 | Search, probe, fetch, verify web content |
-| `mcp_web_browser_query` | 5 | Query and export the local SQLite knowledge base |
-| `mcp_web_browser_crawl` | 5 | Domain crawl with checkpoint resume |
+| Basic | `browse_search`, `browse_locate`, `browse_inspect`, `browse_fetch`, `browse_extract`, `browse_verify`, `browse_status`, `browse_datetime` | On |
+| Query | `query_locate`, `query_search`, `query_select`, `query_export`, `query_stats` | On |
+| Crawl | `crawl_locate`, `crawl_plan`, `crawl_run`, `crawl_resume`, `crawl_verify`, `browse_research` | Off |
 
-**Core capabilities:**
-- Web search via SearXNG / DDG / Brave (no API key required)
-- HTTP fetch with TLS fingerprint impersonation (`curl_cffi`)
-- DOM/SPA rendering via Playwright stealth mode
-- Domain crawl with circuit breaker, rate limiter, and checkpoint resume
-- SQLite + FTS5 knowledge base for full-text query and export
+#### Configuration
+- All caps and defaults controlled by environment variables — no hardcoded limits
+- `MCP_CONSTRAINED_MODE=1` halves all caps for lower-memory machines
+- Tier toggles (`MCP_TIER_BASIC`, `MCP_TIER_QUERY`, `MCP_TIER_CRAWL`) allow staying within model context budgets
+- Research defaults tunable without code changes:
 
-**Engine architecture:**
-- `engine/core/` — queue, router, scheduler, checkpoint, timer
-- `engine/workers/` — http, browser, crawl, search, fingerprint, tls
-- `engine/resilience/` — circuit_breaker, rate_limiter, retry
-- `engine/db/` — schema, indexer, query (SQLite + FTS5, WAL mode)
-- `engine/output/` — stream (JSONL), export (CSV/JSON), display
+| Variable | Default | Purpose |
+|---|---|---|
+| `MCP_SEARCH_LIMIT` | `10` | Default hit count for `browse_search` |
+| `MCP_RESEARCH_DEPTH` | `2` | Default depth for `browse_research` |
+| `MCP_RESEARCH_FETCH_TOP` | `5` | Default fetch_top for `browse_research` |
+| `MCP_RESEARCH_BREADTH` | `1` | Default breadth for `browse_research` |
 
-**Tests:** unit, integration, e2e, and smoke suites.
+#### Resilience
+- Per-domain circuit breaker (open on repeated failures, resets after cooldown)
+- Token-bucket rate limiter per domain
+- Retry with exponential back-off
+- `MCP_CONSTRAINED_MODE` read at call time — tests can flip it without reloading modules
+
+---
+
+### Platform Support
+
+| Platform | Status |
+|---|---|
+| Windows 11 | Tested — real-world verified |
+| macOS | CI passes (untested by hand) |
+| Linux | CI passes (untested by hand) |
+
+---
+
+### Known Limitations
+
+- All three tiers enabled simultaneously may exceed a model's tool-schema context budget; enable at most two at a time on constrained hosts
+- Browser fallback (Google/DDG via Playwright) requires `playwright install chromium chromium-headless-shell` to be run once before first use
+- Deep research at `depth=3` with `breadth=3` can take 30–60 seconds depending on network conditions and backend availability
