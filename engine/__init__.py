@@ -1017,48 +1017,35 @@ async def research_topic(
     progress: list[dict] = []
     errors: list[str] = []
 
-    # ── Step 1: search ────────────────────────────────────────────────────────
-    search_result = await rt.search_worker().search(query, limit=cap)
-    if search_result.backend == "none" and rt._browser_worker is not None:
-        # Only use browser if already warm — launching cold adds 30-50 s and
-        # causes LM Studio to close the WebSocket before the tool returns.
-        try:
-            bw = rt._browser_worker
-            raw = await asyncio.wait_for(bw.search_google(query, cap), timeout=20.0)
-            if raw:
-                search_result.hits = [
-                    SearchHit(title=h["title"], url=h["url"], snippet=h["snippet"], backend="browser_google")
-                    for h in raw
-                ]
-                search_result.backend = "browser_google"
-                search_result.total = len(raw)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"browser_fallback: {type(exc).__name__}: {exc}")
-
-    if not search_result.hits:
+    # ── Step 1: search (reuses search_web which includes browser fallback) ───────
+    sw = await search_web(query, limit=cap)
+    if not sw.get("ok") or not sw.get("hits"):
+        backend_errors = sw.get("backend_errors", [])
         no_results: dict[str, Any] = {
             "ok": False,
             "op": "browse_research",
             "query": query,
             "error": "search_failed",
             "hint": "All search backends failed. Try browse_status() to diagnose.",
+            "backend_errors": backend_errors,
             "progress": [fail("Search failed", "all backends returned 0 hits")],
             "suggested_next": [next_step("browse_status", "check engine health")],
         }
         no_results["token_estimate"] = _tok(no_results)
         return no_results
+    raw_hits: list[dict[str, Any]] = sw["hits"]
 
-    progress.append(ok("Search", f"{len(search_result.hits)} hits via {search_result.backend}"))
+    progress.append(ok("Search", f"{len(raw_hits)} hits via {sw['backend']}"))
 
     # ── Step 2: fetch top-N ───────────────────────────────────────────────────
     sources: list[dict[str, Any]] = []
-    for i, hit in enumerate(search_result.hits):
+    for i, hit in enumerate(raw_hits):
         sources.append(
             {
                 "rank": i + 1,
-                "title": hit.title,
-                "url": hit.url,
-                "snippet": hit.snippet,
+                "title": hit["title"],
+                "url": hit["url"],
+                "snippet": hit["snippet"],
                 "fetched": False,
                 "text_preview": None,
             }
@@ -1090,17 +1077,18 @@ async def research_topic(
         fetched_titles = " ".join(s["title"] for s in sources if s["fetched"])[:120]
         refined_query = f"{query} {fetched_titles}".strip()
         try:
-            refined = await rt.search_worker().search(refined_query, limit=cap)
-            if refined.hits:
+            refined_sw = await search_web(refined_query, limit=cap)
+            refined_hits: list[dict[str, Any]] = refined_sw.get("hits") or []
+            if refined_hits:
                 seen_urls = {s["url"] for s in sources}
-                new_hits = [h for h in refined.hits if h.url not in seen_urls]
+                new_hits = [h for h in refined_hits if h["url"] not in seen_urls]
                 for j, hit in enumerate(new_hits[:cap], len(sources) + 1):
                     sources.append(
                         {
                             "rank": j,
-                            "title": hit.title,
-                            "url": hit.url,
-                            "snippet": hit.snippet,
+                            "title": hit["title"],
+                            "url": hit["url"],
+                            "snippet": hit["snippet"],
                             "fetched": False,
                             "text_preview": None,
                         }
@@ -1118,7 +1106,7 @@ async def research_topic(
         "op": "browse_research",
         "query": query,
         "depth": depth,
-        "search_backend": search_result.backend,
+        "search_backend": sw["backend"],
         "sources": sources,
         "cite_hints": cite_hints,
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
