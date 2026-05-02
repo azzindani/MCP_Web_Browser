@@ -109,6 +109,7 @@ _RT: _Runtime | None = None
 # Prevents models from looping the same failing query indefinitely.
 _SEARCH_FAIL_COUNTS: dict[str, int] = {}
 _SEARCH_FAIL_LIMIT = 2
+_RESEARCH_PREVIEW = 800  # chars per source preview in research mode
 
 
 def runtime() -> _Runtime:
@@ -1001,17 +1002,48 @@ async def extract_from_url(
 # ── Research tier ─────────────────────────────────────────────────────────────
 
 
+def _research_queries(query: str, breadth: int) -> list[str]:
+    """Generate up to breadth search angles (no LLM — keyword expansion only)."""
+    if breadth <= 1:
+        return [query]
+    year = datetime.now(UTC).year
+    angles = [
+        f"{query} {year}",
+        f"{query} overview guide",
+        f"{query} best practices examples",
+        f"how {query} works explained",
+    ]
+    return [query] + angles[: breadth - 1]
+
+
+def _dedup_by_domain(hits: list[dict[str, Any]], max_per_domain: int = 2) -> list[dict[str, Any]]:
+    """Keep at most max_per_domain hits from any single hostname."""
+    counts: dict[str, int] = {}
+    out: list[dict[str, Any]] = []
+    for h in hits:
+        dom = urlparse(h["url"]).hostname or ""
+        if counts.get(dom, 0) < max_per_domain:
+            out.append(h)
+            counts[dom] = counts.get(dom, 0) + 1
+    return out
+
+
 async def research_topic(
     query: str,
     depth: int = 2,
-    fetch_top: int = 3,
+    fetch_top: int = 5,
     limit: int | None = None,
+    breadth: int = 1,
 ) -> dict[str, Any]:
-    """Search + auto-fetch top results and return sources ready for citation.
+    """Search + auto-fetch + index sources. Returns rich citation package.
 
-    depth=1  search only (no fetching)
-    depth=2  search + fetch top fetch_top URLs          (default)
-    depth=3  search + fetch + one refined follow-up search
+    depth=1   search only
+    depth=2   search + parallel-fetch top fetch_top URLs  (default)
+    depth=3   depth=2 + refined follow-up search
+    breadth=1 single query (default)
+    breadth=2 multi-angle: adds year + overview variants
+    breadth=3 wider: adds best-practices + how-it-works angles
+    fetch_top=0  fetch ALL results
     """
     rt = runtime()
     cap = limit if limit is not None else get_max_results()
@@ -1019,72 +1051,106 @@ async def research_topic(
     progress: list[dict] = []
     errors: list[str] = []
 
-    # ── Step 1: search (reuses search_web which includes browser fallback) ───────
-    sw = await search_web(query, limit=cap)
-    if not sw.get("ok") or not sw.get("hits"):
-        backend_errors = sw.get("backend_errors", [])
-        no_results: dict[str, Any] = {
-            "ok": False,
-            "op": "browse_research",
-            "query": query,
-            "error": "search_failed",
-            "hint": "All search backends failed. Try browse_status() to diagnose.",
-            "backend_errors": backend_errors,
-            "progress": [fail("Search failed", "all backends returned 0 hits")],
-            "suggested_next": [next_step("browse_status", "check engine health")],
-        }
-        no_results["token_estimate"] = _tok(no_results)
-        return no_results
-    raw_hits: list[dict[str, Any]] = sw["hits"]
+    # ── Step 1: search (one or multiple angles) ───────────────────────────────
+    all_hits: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    queries = _research_queries(query, breadth)
+    last_backend = "none"
+    last_sw: dict[str, Any] = {}
 
-    progress.append(ok("Search", f"{len(raw_hits)} hits via {sw['backend']}"))
-
-    # ── Step 2: fetch top-N ───────────────────────────────────────────────────
-    sources: list[dict[str, Any]] = []
-    for i, hit in enumerate(raw_hits):
-        sources.append(
-            {
-                "rank": i + 1,
-                "title": hit["title"],
-                "url": hit["url"],
-                "snippet": hit["snippet"],
-                "fetched": False,
-                "text_preview": None,
+    for qi, q in enumerate(queries):
+        sw = await search_web(q, limit=cap)
+        if sw.get("ok") and sw.get("hits"):
+            new = [h for h in sw["hits"] if h["url"] not in seen_urls]
+            all_hits.extend(new)
+            seen_urls.update(h["url"] for h in new)
+            last_backend = str(sw.get("backend", "unknown"))
+            last_sw = sw
+            progress.append(ok("Search", f"[q{qi + 1}] {len(new)} new hits via {last_backend}"))
+        elif qi == 0:
+            backend_errors = sw.get("backend_errors", [])
+            no_results: dict[str, Any] = {
+                "ok": False,
+                "op": "browse_research",
+                "query": query,
+                "error": "search_failed",
+                "hint": "All search backends failed. Try browse_status() to diagnose.",
+                "backend_errors": backend_errors,
+                "progress": [fail("Search failed", "all backends returned 0 hits")],
+                "suggested_next": [next_step("browse_status", "check engine health")],
             }
-        )
+            no_results["token_estimate"] = _tok(no_results)
+            return no_results
+        else:
+            errors.append(f"angle[{qi + 1}] search failed: {sw.get('error', 'no hits')}")
 
-    if depth >= 2:
-        for i in range(min(fetch_top, len(sources))):
-            url_to_fetch = sources[i]["url"]
-            try:
-                fetch_result = await rt.http_worker().fetch_one(Task(url=url_to_fetch))
-                if fetch_result.status == "ok":
-                    preview = ""
-                    if isinstance(fetch_result.extracted, dict):
-                        preview = str(fetch_result.extracted.get("text_preview") or "")[:500]
-                    sources[i]["fetched"] = True
-                    sources[i]["text_preview"] = preview
-                    if fetch_result.title:
-                        sources[i]["title"] = fetch_result.title
-                    progress.append(ok("Fetched", f"[{i + 1}] {url_to_fetch}"))
-                else:
-                    errors.append(f"fetch[{i + 1}]: {fetch_result.error or fetch_result.status}")
-                    progress.append(warn("Fetch skipped", f"[{i + 1}] {fetch_result.error or 'error'}"))
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"fetch[{i + 1}]: {exc}")
-                progress.append(warn("Fetch error", f"[{i + 1}] {str(exc)[:60]}"))
+    # Dedup: max 2 results per domain
+    deduped_hits = _dedup_by_domain(all_hits, max_per_domain=2)
+
+    sources: list[dict[str, Any]] = [
+        {
+            "rank": i + 1,
+            "title": h["title"],
+            "url": h["url"],
+            "snippet": h["snippet"],
+            "fetched": False,
+            "text_preview": None,
+        }
+        for i, h in enumerate(deduped_hits)
+    ]
+
+    # ── Step 2: parallel fetch + index ───────────────────────────────────────
+    if depth >= 2 and sources:
+        n_fetch = len(sources) if fetch_top == 0 else min(fetch_top, len(sources))
+        fetch_tasks = [rt.http_worker().fetch_one(Task(url=sources[i]["url"])) for i in range(n_fetch)]
+        fetch_results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+        for i, result in enumerate(fetch_results):
+            rank_i = sources[i]["rank"]
+            url_i = sources[i]["url"]
+            if isinstance(result, BaseException):
+                errors.append(f"fetch[{rank_i}]: {result}")
+                progress.append(warn("Fetch error", f"[{rank_i}] {str(result)[:60]}"))
+            elif result.status == "ok":
+                preview = ""
+                if isinstance(result.extracted, dict):
+                    preview = str(result.extracted.get("text_preview") or "")[:_RESEARCH_PREVIEW]
+                sources[i]["fetched"] = True
+                sources[i]["text_preview"] = preview
+                if result.title:
+                    sources[i]["title"] = result.title
+                rt.indexer().index(
+                    {
+                        "url": result.url,
+                        "title": result.title,
+                        "status": result.status,
+                        "mode": result.mode,
+                        "elapsed_ms": result.elapsed_ms,
+                        "extracted": result.extracted,
+                        "group": result.group,
+                        "ticker": result.ticker,
+                        "extractedAt": result.extracted_at,
+                    },
+                    run_id="research",
+                )
+                progress.append(ok("Fetched+indexed", f"[{rank_i}] {url_i}"))
+            else:
+                errors.append(f"fetch[{rank_i}]: {result.error or result.status}")
+                progress.append(warn("Fetch skipped", f"[{rank_i}] {result.error or 'error'}"))
 
     # ── Step 3: optional refined follow-up search ─────────────────────────────
     if depth >= 3:
-        fetched_titles = " ".join(s["title"] for s in sources if s["fetched"])[:120]
-        refined_query = f"{query} {fetched_titles}".strip()
+        fetched_context = " ".join(
+            (s.get("text_preview") or s.get("snippet") or "")[:80] for s in sources if s["fetched"]
+        )[:300]
+        refined_query = f"{query} {fetched_context}".strip()[:200]
         try:
             refined_sw = await search_web(refined_query, limit=cap)
             refined_hits: list[dict[str, Any]] = refined_sw.get("hits") or []
             if refined_hits:
-                seen_urls = {s["url"] for s in sources}
                 new_hits = [h for h in refined_hits if h["url"] not in seen_urls]
-                for j, hit in enumerate(new_hits[:cap], len(sources) + 1):
+                deduped_new = _dedup_by_domain(new_hits, max_per_domain=1)
+                for j, hit in enumerate(deduped_new[:cap], len(sources) + 1):
                     sources.append(
                         {
                             "rank": j,
@@ -1095,47 +1161,60 @@ async def research_topic(
                             "text_preview": None,
                         }
                     )
-                progress.append(info("Refined search", f"+{len(new_hits)} additional hits"))
+                    seen_urls.add(hit["url"])
+                progress.append(info("Refined search", f"+{len(deduped_new)} additional sources"))
         except Exception as exc:  # noqa: BLE001
             errors.append(f"refined_search: {exc}")
 
-    # ── Build cite_hints ──────────────────────────────────────────────────────
+    # ── Build output ──────────────────────────────────────────────────────────
+    fetched = [s for s in sources if s["fetched"]]
+    unfetched = [s for s in sources if not s["fetched"]]
     cite_hints = [f"[{s['rank']}] {s['title']} — {s['url']}" for s in sources]
     cite_format = "## Sources\n" + "\n".join(f"- {c}" for c in cite_hints)
 
-    res = {
+    res: dict[str, Any] = {
         "ok": True,
         "op": "browse_research",
         "query": query,
         "depth": depth,
-        "search_backend": sw["backend"],
+        "breadth": breadth,
+        "search_backend": last_backend,
+        "total_sources": len(sources),
+        "fetched_count": len(fetched),
         "sources": sources,
         "cite_hints": cite_hints,
         "elapsed_ms": int((time.monotonic() - t0) * 1000),
         "progress": progress,
         "handover": {
             "instruction": (
-                "You MUST make additional tool calls before answering. "
-                "Call browse_fetch on each URL listed in unfetched_sources below to get full content. "
-                "Then synthesize all fetched text_previews into a coherent answer. "
-                "End your response with a '## Sources' section using the cite_format below."
+                f"{len(fetched)} sources fetched and indexed into the knowledge base. "
+                "Read text_preview in each fetched source for a content digest. "
+                "Use query_search to retrieve full text from any indexed page. "
+                "Call browse_fetch on high-value unfetched URLs for more content. "
+                "End your response with a '## Sources' section using cite_format."
             ),
             "cite_format": cite_format,
         },
         "suggested_next": [
-            {"tool": "browse_fetch", "url": s["url"], "reason": f"[{s['rank']}] fetch full content — {s['title'][:50]}"}
-            for s in sources
-            if not s["fetched"]
-        ][:5]
-        + [next_step("browse_research", "follow-up research query to go deeper")],
-        "unfetched_sources": [
-            {"rank": s["rank"], "title": s["title"], "url": s["url"]} for s in sources if not s["fetched"]
+            {
+                "tool": "browse_fetch",
+                "url": s["url"],
+                "reason": f"[{s['rank']}] fetch full content — {s['title'][:50]}",
+            }
+            for s in unfetched[:5]
+        ]
+        + [
+            next_step("query_search", "search full text of all indexed research pages"),
+            next_step("browse_research", "follow-up query to go deeper"),
         ],
+        "unfetched_sources": [{"rank": s["rank"], "title": s["title"], "url": s["url"]} for s in unfetched],
         "carry_forward": {
             "query": query,
-            "urls": [s["url"] for s in sources[:5]],
+            "urls": [s["url"] for s in sources[:10]],
         },
     }
+    if last_sw.get("current_date"):
+        res["current_date"] = last_sw["current_date"]
     if errors:
         res["errors"] = errors
     res["token_estimate"] = _tok(res)

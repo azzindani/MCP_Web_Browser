@@ -168,9 +168,10 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools).
 | Parameter | Default | Purpose |
 |---|---|---|
 | `query` | — | Research question |
-| `depth` | `2` | `1` = search only · `2` = search + fetch top N · `3` = search + fetch + re-search |
-| `fetch_top` | `3` | How many top results to fetch at depth ≥ 2 |
-| `limit` | platform cap | Max search hits |
+| `depth` | `2` | `1` = search only · `2` = search + parallel-fetch + index · `3` = depth-2 + refined follow-up search |
+| `fetch_top` | `5` | How many top results to fetch at depth ≥ 2. `0` = fetch **all** results. |
+| `limit` | platform cap | Max search hits per query |
+| `breadth` | `1` | `1` = single query · `2` = multi-angle (adds year + overview variants) · `3` = wider (adds best-practices + how-it-works) |
 
 ---
 
