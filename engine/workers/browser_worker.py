@@ -328,9 +328,12 @@ _EVAL_GOOGLE_SEARCH = """
     const a = h3.closest('a') || h3.querySelector('a') ||
               h3.parentElement?.querySelector('a[href^="http"]');
     if (!a) continue;
-    const href = a.href || '';
+    let href = a.href || '';
     if (!href.startsWith('http') || href.includes('google.com') ||
         href.includes('webcache') || seen.has(href)) continue;
+    // Strip Google's text-fragment annotations (#:~:text=...) — browser-only, break HTTP fetches.
+    const fragIdx = href.indexOf('#:~:');
+    if (fragIdx !== -1) href = href.slice(0, fragIdx);
     seen.add(href);
     const title = (h3.innerText || h3.textContent || '').trim();
     if (title.length < 3) continue;
@@ -339,7 +342,9 @@ _EVAL_GOOGLE_SEARCH = """
     const snipEl = block?.querySelector(
       '[data-sncf="1"], [data-snf], .VwiC3b, .IsZvec, [class*="snippet"], span[data-dtld]'
     ) || block?.querySelector('div > span, p');
-    const snippet = (snipEl?.innerText || snipEl?.textContent || '').trim().slice(0, 300);
+    let snippet = (snipEl?.innerText || snipEl?.textContent || '').trim().slice(0, 300);
+    // Strip Google's "Translate this page" label from snippet noise.
+    snippet = snippet.replace(/[ ]*·[ ]*Terjemahkan halaman ini[ ]*/gi, '').trim();
     hits.push({ title, url: href, snippet });
   }
   return hits;
