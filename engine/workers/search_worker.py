@@ -109,9 +109,11 @@ _DDG_LITE_SNIPPET_RE = re.compile(
     re.DOTALL,
 )
 
-# Split on any tag that carries b_algo (Bing uses <li> or <div> depending on layout).
-_BING_BLOCK_RE = re.compile(r'<(?:li|div)[^>]+class=["\'][^"\']*b_algo[^"\']*["\']', re.DOTALL)
-_BING_LINK_RE = re.compile(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
+# Split on ANY element that carries b_algo class (li, div, ol, article, etc.).
+_BING_BLOCK_RE = re.compile(r'<[a-zA-Z]\w*[^>]+class=["\'][^"\']*b_algo[^"\']*["\']', re.DOTALL)
+# Prefer h2>a (result title), fall back to any <a href="http...">
+_BING_H2_LINK_RE = re.compile(r'<h2[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
+_BING_LINK_RE = re.compile(r'<a[^>]+href="(https?://[^"]+)"[^>]*>(.*?)</a>', re.DOTALL)
 _BING_SNIPPET_RE = re.compile(r"<p[^>]*>(.*?)</p>", re.DOTALL)
 
 _BRAVE_RESULT_RE = re.compile(
@@ -209,7 +211,7 @@ def _parse_bing(body: str, cap: int) -> list[SearchHit]:
     for block in parts[1:]:
         if len(hits) >= cap:
             break
-        link_m = _BING_LINK_RE.search(block)
+        link_m = _BING_H2_LINK_RE.search(block) or _BING_LINK_RE.search(block)
         if not link_m:
             continue
         href = _resolve_bing_redirect(unescape(link_m.group(1)))

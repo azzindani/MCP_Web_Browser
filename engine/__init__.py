@@ -234,6 +234,8 @@ async def search_web(query: str, limit: int | None = None) -> dict[str, Any]:
                 continue
             try:
                 raw_hits = await asyncio.wait_for(search_fn(query, cap), timeout=_BROWSER_SEARCH_TIMEOUT)
+                if not raw_hits:
+                    browser_errors.append(f"{engine_name}: 0 results (captcha or bot-block)")
                 if raw_hits:
                     res["ok"] = True
                     res["backend"] = engine_name
