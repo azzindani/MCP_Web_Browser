@@ -54,3 +54,6 @@ krawl.db
 # OS
 .DS_Store
 Thumbs.db
+
+# Deployment secrets
+.env
