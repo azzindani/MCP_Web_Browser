@@ -29,6 +29,15 @@ Domain: web ingestion, SPA scraping, domain crawls, full-text search.
 Target: 8 GB GPU running a 9B parameter model, no cloud, no API keys.
 ```
 
+**Deployment scope:** local-first is the default — the pipeline above always runs
+on local CPU with no cloud dependency. On top of that, this server can also run
+in HTTP mode, self-hosted behind a reverse proxy, so it can be connected as a
+remote endpoint by AI platforms and harnesses (Claude Desktop, claude.ai remote
+MCP, other MCP clients) rather than only as a local stdio process. Remote mode is
+opt-in, bearer-token authenticated (see §7), and still runs on infrastructure you
+control. This is one of six sibling `MCP_*` repos brought to this same deployment
+model.
+
 ## 2. Repository Structure
 
 ```
@@ -252,11 +261,48 @@ cross-cutting research primitive, not a domain-crawler.
    ```
 
 5. Commit with a message in the form `<area>: <imperative summary>`.
-6. Update the progress tracker in §7 below.
+6. Update the progress tracker in §8 below.
 
-## 7. Progress Tracker
+## 7. Transport and Deployment (STANDARDS.md §30, §31)
 
-### 7.1 Milestones
+Server supports `--transport stdio` (default, `server.py::main()`) and
+`--transport http`, controlled by `WEB_HOST`/`WEB_PORT` env vars (read at
+`FastMCP` construction time — not CLI flags; `--host`/`--port` do not exist).
+
+For Docker/remote deployment — connecting this server to AI platforms and
+harnesses as a hosted endpoint, not just a local LM Studio stdio process —
+bearer auth (`deploy_auth.py`, `build_auth("WEB", host, port)`) gates the
+whole server:
+
+- `WEB_TOKENS_FILE` (named tokens, JSON `{name: token}`) — highest priority
+- `WEB_TOKENS` (inline `"name:token,name2:token2"`)
+- `WEB_API_KEY` (single shared token)
+- unset = open mode (no auth) — localhost/private-network use only, never for
+  a publicly reachable deployment
+
+The production deployment runs `WEB_API_KEY` set from a local `.env` file
+(gitignored, never committed) behind a reverse proxy; a request without a
+valid `Authorization: Bearer <token>` header is rejected with `401` before it
+reaches any tool.
+
+`docker-compose.yml` runs one container (`mcp-web-browser`, `WEB_HOST=0.0.0.0`,
+default port `8766`). `remote_launch.sh` is a Docker-free alternative (Colab /
+any fresh Linux VM): runs `uv run python server.py --transport http` directly
+plus a Cloudflare Quick Tunnel — NOT for production; unauthenticated at the
+tunnel level unless `WEB_API_KEY` / `WEB_TOKENS*` is set first.
+
+### Remote smoke tests (not part of pytest / CI)
+
+Verifying the deployed HTTP endpoint (auth enforcement, real tool calls against
+the real public domain) is a separate, manual/on-demand check — hand-authored
+`curl` sessions or a `remote_smoke_test.sh`, never wired into CI, never storing
+the live API key in the repo. `pytest` stays offline-only per STANDARDS.md.
+
+---
+
+## 8. Progress Tracker
+
+### 8.1 Milestones
 
 - [x] **M1** — Repo scaffold (`pyproject.toml`, `uv.lock`, lint/pyright/pytest)
 - [x] **M2** — `engine/db/` schema + indexer + query (SQLite + FTS5)
@@ -271,7 +317,7 @@ cross-cutting research primitive, not a domain-crawler.
                (stream, export, display), workers/tls, cli.py, selectors/,
                smoke/integration/e2e test suites
 
-### 7.2 Tool surface
+### 8.2 Tool surface
 
 | Tier    | Tool             | Role     | Status |
 |---------|------------------|----------|---------|
@@ -295,7 +341,7 @@ cross-cutting research primitive, not a domain-crawler.
 | crawl   | `crawl_verify`   | VERIFY   | [x]    |
 | crawl   | `browse_research`| composite| [x]    |
 
-### 7.3 Compliance gates (CI)
+### 8.3 Compliance gates (CI)
 
 - [x] No `mcp` imports inside `engine/**` or `shared/**`
 - [x] All tool docstrings ≤ 80 characters
@@ -304,7 +350,7 @@ cross-cutting research primitive, not a domain-crawler.
 - [x] `snapshot()` invoked before every persistent write (see §3.4 table)
 - [x] No stdout writes from any module reachable by `server.py`
 
-## 8. References
+## 9. References
 
 - Source engine: <https://github.com/azzindani/krawl>
 - Krawl architecture: `docs/ARCHITECTURE.md` in the krawl repo
