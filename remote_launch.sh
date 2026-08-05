@@ -40,7 +40,9 @@ sleep 1
 
 cd "$REPO_DIR"
 echo "[remote_launch] starting mcp-web-browser on :${PORT}..."
-nohup uv run python server.py --transport http --host 0.0.0.0 --port "$PORT" > "$LOG_DIR/server.log" 2>&1 &
+# WEB_HOST/WEB_PORT are read at import time (module-level FastMCP(...) call),
+# not CLI flags — this server's main() only takes --transport.
+WEB_HOST=0.0.0.0 WEB_PORT="$PORT" nohup uv run python server.py --transport http > "$LOG_DIR/server.log" 2>&1 &
 
 for i in $(seq 1 30); do
   curl -fsS "http://localhost:${PORT}/health" >/dev/null 2>&1 && break
