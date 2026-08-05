@@ -44,7 +44,8 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 # after.
 RUN playwright install --with-deps chromium chromium-headless-shell \
     && groupadd -r app && useradd -r -g app app \
-    && chown -R app:app /app
+    && chown -R app:app /app \
+    && mkdir -p /home/app && chown app:app /home/app
 
 USER app
 EXPOSE 8766
