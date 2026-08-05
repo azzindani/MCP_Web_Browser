@@ -280,6 +280,23 @@ Not for production: Quick Tunnels are unauthenticated at the transport layer.
 Set `WEB_API_KEY` or `WEB_TOKENS_FILE` before tunneling so `/mcp` still
 requires a bearer token even while it's publicly reachable.
 
+### Remote smoke test (`remote_smoke_test.sh`)
+
+Not part of pytest/CI — the separate, manual/on-demand check that exercises
+the real deployed HTTP endpoint: auth enforcement plus a real
+handwritten-prompt-style call for all **13 default-on tools** (Basic + Query
+tiers — `browse_status`, `browse_datetime`, `browse_locate`, `browse_inspect`,
+`browse_fetch`, `browse_verify`, `browse_extract`, `browse_search`,
+`query_locate`, `query_search`, `query_stats`, `query_select`,
+`query_export`). This is what caught `browse_extract`'s missing `lxml`/
+`cssselect` runtime dependency — invisible to pytest since dev deps mask it
+locally, but broken in every real Docker deployment.
+
+```bash
+./remote_smoke_test.sh                       # reads WEB_API_KEY from .env, targets browser.casava.space
+DOMAIN=http://localhost:8766 ./remote_smoke_test.sh   # test a different target
+```
+
 ## Usage Examples
 
 ### Search the web
