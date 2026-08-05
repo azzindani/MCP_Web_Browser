@@ -398,8 +398,10 @@ name = "mcp-web-browser"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cssselect" },
     { name = "curl-cffi" },
     { name = "httpx", extra = ["http2"] },
+    { name = "lxml" },
     { name = "markdownify" },
     { name = "mcp" },
     { name = "playwright" },
@@ -409,8 +411,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "cssselect" },
-    { name = "lxml" },
     { name = "pyright" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -419,8 +419,10 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cssselect", specifier = ">=1.2" },
     { name = "curl-cffi", specifier = ">=0.7" },
     { name = "httpx", extras = ["http2"], specifier = ">=0.27" },
+    { name = "lxml", specifier = ">=4.9" },
     { name = "markdownify", specifier = ">=0.13" },
     { name = "mcp", specifier = ">=1.0" },
     { name = "playwright", specifier = ">=1.45" },
@@ -430,8 +432,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "cssselect", specifier = ">=1.2" },
-    { name = "lxml", specifier = ">=4.9" },
     { name = "pyright", specifier = ">=1.1" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.23" },

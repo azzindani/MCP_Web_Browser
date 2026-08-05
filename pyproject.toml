@@ -7,7 +7,15 @@ requires-python = "==3.12.*"
 license         = { text = "MIT" }
 authors         = [{ name = "Afza Azzindani" }]
 
-# Runtime deps. Cap = 7 per STANDARDS §35. Currently 7.
+# Runtime deps. STANDARDS §35 targets a cap of 7; currently 9 — lxml and
+# cssselect were originally dev-only (pytest fixtures), but engine/workers/
+# extractor.py (backing the real browse_extract tool) hard-requires them at
+# runtime with no fallback. They were missing from every Docker/remote image
+# as a result — browse_extract failed with "lxml not installed" on every
+# real call, only masked locally because `uv sync` (dev) installs them too.
+# Found via remote_smoke_test.sh actually calling the tool, not just
+# /health. Per this file's own precedence over STANDARDS.md (see header),
+# a broken advertised tool outweighs the dependency-count target here.
 dependencies = [
   "mcp>=1.0",
   "httpx[http2]>=0.27",
@@ -16,6 +24,8 @@ dependencies = [
   "pypdf>=4.0",
   "curl_cffi>=0.7",      # TLS fingerprint impersonation (Scrapling-inspired)
   "markdownify>=0.13",   # HTML→Markdown for clean content extraction
+  "lxml>=4.9",           # backs browse_extract's CSS-selector extraction
+  "cssselect>=1.2",      # backs browse_extract's CSS-selector extraction
 ]
 
 [dependency-groups]
@@ -24,8 +34,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.5",
     "pyright>=1.1",
-    "lxml>=4.9",
-    "cssselect>=1.2",
 ]
 
 [build-system]
