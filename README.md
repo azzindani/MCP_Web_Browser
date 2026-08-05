@@ -212,6 +212,66 @@ All limits and storage paths flow through environment variables. Defaults are tu
 
 ---
 
+## Deployment
+
+| Mode | Best for | Transport | Auth |
+|---|---|---|---|
+| **Local stdio** (default, above) | LM Studio / Claude Code on your machine | stdio | none |
+| **Local Docker / HTTP** | Testing, or one other machine on your LAN | HTTP | optional |
+| **VPS Docker** | Remote MCP clients (claude.ai, hosted harnesses) | HTTP | **required** |
+
+### HTTP transport (no Docker)
+
+```bash
+WEB_TRANSPORT=http WEB_PORT=8766 uv run python server.py
+curl http://localhost:8766/health   # {"status":"ok","version":"0.1.0"}
+```
+
+### Docker
+
+```bash
+docker compose up -d --build
+curl http://localhost:8766/health
+```
+
+With auth (recommended for any network-reachable deploy):
+
+```bash
+cp tokens.example.json tokens.json   # edit: replace placeholders with `openssl rand -hex 32`
+docker compose up -d --build
+```
+
+`/mcp` requires `Authorization: Bearer <token>` once any of `WEB_TOKENS_FILE` /
+`WEB_TOKENS` / `WEB_API_KEY` is set; `/health` and `/version` stay unauthenticated.
+The crawl SQLite DB (`krawl.db`) persists via a bind mount — see `docker-compose.yml`.
+
+### Deployment environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEB_TRANSPORT` | `stdio` | `stdio` or `http` |
+| `WEB_HOST` | `127.0.0.1` | Bind address for HTTP mode |
+| `WEB_PORT` | `8766` | Port for HTTP mode |
+| `WEB_TOKENS_FILE` | unset | JSON file of named bearer tokens (`{"name": "token"}`) — highest priority |
+| `WEB_TOKENS` | unset | Inline `"name:token,name2:token2"` |
+| `WEB_API_KEY` | unset | Single shared bearer token |
+
+### Remote testing (Cloudflare Quick Tunnel)
+
+Same idea as `azzindani/Folio`'s `launch.sh`: bring the Docker deployment up
+and expose it at an ephemeral `*.trycloudflare.com` URL — no VPS, no DNS, no
+account — so it's reachable from any MCP-compatible harness for a quick
+remote smoke test.
+
+```bash
+./launch_tunnel.sh          # docker compose up -d --build, then tunnel
+./launch_tunnel.sh stop     # tear the tunnel down (containers keep running)
+```
+
+Not for production: Quick Tunnels are unauthenticated at the transport layer.
+Set `WEB_API_KEY` or `WEB_TOKENS_FILE` before tunneling so `/mcp` still
+requires a bearer token even while it's publicly reachable.
+
 ## Usage Examples
 
 ### Search the web

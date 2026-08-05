@@ -13,13 +13,17 @@ logic lives in engine/**; this file only validates and dispatches.
 
 from __future__ import annotations
 
+import argparse
 import os
 from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 import engine
+from deploy_auth import build_auth
 from shared.platform_utils import (
     get_research_breadth,
     get_research_depth,
@@ -27,7 +31,30 @@ from shared.platform_utils import (
     get_search_limit,
 )
 
-app: FastMCP = FastMCP("mcp_web_browser")
+_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+_HOST = os.environ.get("WEB_HOST", "127.0.0.1")
+_PORT = int(os.environ.get("WEB_PORT", "8766"))
+_token_verifier, _auth_settings = build_auth("WEB", _HOST, _PORT)
+
+app: FastMCP = FastMCP(
+    "mcp_web_browser",
+    host=_HOST,
+    port=_PORT,
+    token_verifier=_token_verifier,
+    auth=_auth_settings,
+)
+
+
+@app.custom_route("/health", methods=["GET"])
+async def health(request: Request) -> JSONResponse:
+    """Liveness check. Unauthenticated."""
+    return JSONResponse({"status": "ok", "version": _VERSION})
+
+
+@app.custom_route("/version", methods=["GET"])
+async def version(request: Request) -> JSONResponse:
+    """Report running version. Unauthenticated."""
+    return JSONResponse({"current": _VERSION})
 
 
 def _enabled(name: str, default: str) -> bool:
@@ -210,7 +237,18 @@ if _enabled("MCP_TIER_CRAWL", "0"):
 
 
 def main() -> None:
-    app.run()
+    parser = argparse.ArgumentParser(description="Web Browser MCP Server")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default=os.environ.get("WEB_TRANSPORT", "stdio"),
+    )
+    args = parser.parse_args()
+
+    if args.transport == "http":
+        app.run(transport="streamable-http")
+    else:
+        app.run(transport="stdio")
 
 
 if __name__ == "__main__":

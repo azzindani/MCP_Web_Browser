@@ -89,3 +89,17 @@ jobs:
 
       - name: Run tests in constrained mode
         run: uv run python -m pytest tests/ -q --tb=short
+
+  docker-build:
+    name: Docker image builds
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (no push)
+        uses: azzindani/MCP_Math/.github/actions/docker-ghcr-publish@main
+        with:
+          image-name: mcp-web-browser
+          push: "false"
+          registry-username: ${{ github.actor }}
+          registry-password: ${{ secrets.GITHUB_TOKEN }}

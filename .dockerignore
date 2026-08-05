@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.pyright/
+.mypy_cache/
+.git/
+.github/
+tests/
+tokens.json
+*.db
+*.db-wal
+*.db-shm
+*.jsonl
+krawl_exports/
+.mcp_versions/

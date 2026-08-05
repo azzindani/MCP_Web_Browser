@@ -1,0 +1,47 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# mcp-web-browser — local & VPS-friendly compose stack.
+#
+# Quick start (open mode, no auth — localhost/private network only):
+#   docker compose up -d --build
+#   curl http://localhost:8766/health
+#
+# With auth (recommended for any network-reachable deploy):
+#   cp tokens.example.json tokens.json   # edit: replace placeholders
+#   docker compose up -d --build
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  web-browser-mcp:
+    build:
+      context: .
+    image: ${WEB_IMAGE:-mcp-web-browser:latest}
+    container_name: mcp-web-browser
+    restart: unless-stopped
+    ports:
+      - "${WEB_HOST_PORT:-8766}:8766"
+    environment:
+      WEB_TRANSPORT: http
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: 8766
+      WEB_TOKENS_FILE: ${WEB_TOKENS_FILE:-}
+      WEB_TOKENS: ${WEB_TOKENS:-}
+      WEB_API_KEY: ${WEB_API_KEY:-}
+      MCP_TIER_BASIC: ${MCP_TIER_BASIC:-1}
+      MCP_TIER_QUERY: ${MCP_TIER_QUERY:-1}
+      MCP_TIER_CRAWL: ${MCP_TIER_CRAWL:-0}
+    mem_limit: ${WEB_MEM_LIMIT:-2g}
+    volumes:
+      # Mount tokens.json read-only when WEB_TOKENS_FILE is set. Optional —
+      # comment out if you use WEB_TOKENS (inline) or WEB_API_KEY instead.
+      # `cp tokens.example.json tokens.json` before first run, or docker will
+      # create an empty directory in its place.
+      - ./tokens.json:/home/app/tokens.json:ro
+      # Crawl/index SQLite DB (engine/config/defaults.py DB_PATH="krawl.db",
+      # a fixed relative path resolved against the container's cwd, /app) —
+      # bind-mount the file itself so it persists across container restarts.
+      - ./krawl.db:/app/krawl.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3

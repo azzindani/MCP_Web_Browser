@@ -42,6 +42,10 @@ krawl_exports/
 # Playwright bundled browsers (installed via uv run playwright install)
 .playwright/
 
+# Deployment secrets / local persistence
+tokens.json
+krawl.db
+
 # IDE
 .idea/
 .vscode/
