@@ -234,11 +234,19 @@ docker compose up -d --build
 curl http://localhost:8766/health
 ```
 
-With auth (recommended for any network-reachable deploy):
+With auth (**required** for any publicly reachable deploy — this is how the
+production `browser.casava.space` endpoint runs):
+
+```bash
+echo "WEB_API_KEY=$(openssl rand -hex 24)" > .env   # gitignored, auto-loaded by docker-compose.yml
+docker compose up -d --build
+```
+
+For multiple named clients instead of one shared key (Folio-style):
 
 ```bash
 cp tokens.example.json tokens.json   # edit: replace placeholders with `openssl rand -hex 32`
-docker compose up -d --build
+WEB_TOKENS_FILE=/path/to/tokens.json docker compose up -d --build
 ```
 
 `/mcp` requires `Authorization: Bearer <token>` once any of `WEB_TOKENS_FILE` /
