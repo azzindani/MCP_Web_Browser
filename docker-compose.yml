@@ -40,7 +40,10 @@ services:
       # bind-mount the file itself so it persists across container restarts.
       # `touch krawl.db` before first run, or docker will create an empty
       # directory in its place (same gotcha as tokens.json above) — the app
-      # then fails every tool call with "[Errno 21] Is a directory".
+      # then fails every tool call with "[Errno 21] Is a directory". Also
+      # `chown 999:999 krawl.db` (the container's non-root `app` user) —
+      # if it's left root-owned, every write fails with "attempt to write
+      # a readonly database" even though the file itself looks fine.
       - ./krawl.db:/app/krawl.db
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health', timeout=3)"]
