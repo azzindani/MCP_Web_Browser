@@ -20,7 +20,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev --no-install-project
 COPY engine ./engine
 COPY shared ./shared
-COPY server.py deploy_auth.py ./
+COPY server.py deploy_auth.py oauth_bridge.py ./
 RUN uv sync --frozen --no-dev
 
 FROM python:${PYTHON_VERSION} AS runtime
@@ -28,7 +28,7 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/engine /app/engine
 COPY --from=builder /app/shared /app/shared
-COPY --from=builder /app/server.py /app/deploy_auth.py ./
+COPY --from=builder /app/server.py /app/deploy_auth.py /app/oauth_bridge.py ./
 COPY pyproject.toml ./
 
 ENV PATH="/app/.venv/bin:${PATH}" \

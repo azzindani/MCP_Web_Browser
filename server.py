@@ -23,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 import engine
-from deploy_auth import build_auth
+from deploy_auth import build_auth, build_oauth_bridge
 from shared.platform_utils import (
     get_research_breadth,
     get_research_depth,
@@ -31,10 +31,11 @@ from shared.platform_utils import (
     get_search_limit,
 )
 
-_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("WEB_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("WEB_PORT", "8766"))
-_token_verifier, _auth_settings = build_auth("WEB", _HOST, _PORT)
+_oauth_bridge = build_oauth_bridge("WEB")
+_token_verifier, _auth_settings = build_auth("WEB", _HOST, _PORT, _oauth_bridge)
 
 app: FastMCP = FastMCP(
     "mcp_web_browser",
@@ -43,6 +44,8 @@ app: FastMCP = FastMCP(
     token_verifier=_token_verifier,
     auth=_auth_settings,
 )
+if _oauth_bridge is not None:
+    _oauth_bridge.register_routes(app)
 
 
 @app.custom_route("/health", methods=["GET"])

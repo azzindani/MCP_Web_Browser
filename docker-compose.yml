@@ -28,6 +28,12 @@ services:
       MCP_TIER_BASIC: ${MCP_TIER_BASIC:-1}
       MCP_TIER_QUERY: ${MCP_TIER_QUERY:-1}
       MCP_TIER_CRAWL: ${MCP_TIER_CRAWL:-0}
+      # OAuth 2.0 bridge for clients that require it (e.g. claude.ai's Custom
+      # Connector) instead of a plain bearer header — see oauth_bridge.py.
+      # Only takes effect when a token source above is set; harmless otherwise.
+      WEB_OAUTH_STATE_DIR: /home/app/.oauth-state
+      WEB_OAUTH_CLIENT_ID: ${WEB_OAUTH_CLIENT_ID:-}
+      WEB_OAUTH_CLIENT_SECRET: ${WEB_OAUTH_CLIENT_SECRET:-}
     mem_limit: ${WEB_MEM_LIMIT:-2g}
     volumes:
       # Mount tokens.json read-only when WEB_TOKENS_FILE is set. Optional —
@@ -35,6 +41,11 @@ services:
       # `cp tokens.example.json tokens.json` before first run, or docker will
       # create an empty directory in its place.
       - ./tokens.json:/home/app/tokens.json:ro
+      # Persists OAuth-issued access/refresh tokens so a container restart
+      # doesn't force claude.ai to reauthorize. `mkdir -p oauth-state && chown
+      # 999:999 oauth-state` before first run (same gotcha as krawl.db below —
+      # left root-owned, the container's non-root user can't write to it).
+      - ./oauth-state:/home/app/.oauth-state
       # Crawl/index SQLite DB (engine/config/defaults.py DB_PATH="krawl.db",
       # a fixed relative path resolved against the container's cwd, /app) —
       # bind-mount the file itself so it persists across container restarts.
