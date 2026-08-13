@@ -552,7 +552,7 @@ def query_search(query: str, table: str = "fts_pages", limit: int | None = None)
     rt = runtime()
     cap = limit if limit is not None else get_max_rows()
     try:
-        rows = rt.query().search(query, table=table, limit=cap)
+        rows = rt.query().search(query, table=table, limit=cap + 1)
     except ValueError as exc:
         res: dict[str, Any] = {
             "ok": False,
@@ -564,7 +564,8 @@ def query_search(query: str, table: str = "fts_pages", limit: int | None = None)
         }
         res["token_estimate"] = _tok(res)
         return res
-    truncated = len(rows) >= cap
+    truncated = len(rows) > cap
+    rows = rows[:cap]
     progress = [ok("FTS search", f"{len(rows)} rows from {table}")]
     if truncated:
         progress.append(warn("Results capped", f"limit={cap}; narrow query or increase limit"))
@@ -591,7 +592,7 @@ def query_select(sql: str, params: tuple[Any, ...] = (), limit: int | None = Non
     rt = runtime()
     cap = limit if limit is not None else get_max_rows()
     try:
-        rows = rt.query().select(sql, params=params, limit=cap)
+        rows = rt.query().select(sql, params=params, limit=cap + 1)
     except ValueError as exc:
         res: dict[str, Any] = {
             "ok": False,
@@ -603,7 +604,8 @@ def query_select(sql: str, params: tuple[Any, ...] = (), limit: int | None = Non
         }
         res["token_estimate"] = _tok(res)
         return res
-    truncated = len(rows) >= cap
+    truncated = len(rows) > cap
+    rows = rows[:cap]
     progress = [ok("SQL executed", f"{len(rows)} rows")]
     if truncated:
         progress.append(warn("Results capped", f"add LIMIT {cap} or use query_export() for full data"))

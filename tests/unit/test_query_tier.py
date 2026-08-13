@@ -81,6 +81,37 @@ def test_query_select_returns_rows(isolated_engine: None) -> None:
     assert out["total"] >= 1
 
 
+def test_query_search_not_truncated_at_exact_row_count(isolated_engine: None) -> None:
+    # Regression: the DB layer fetches exactly `limit` rows (no overfetch),
+    # so hitting the cap exactly used to be reported as truncated=True even
+    # when there was nothing left to find.
+    out = engine.query_search("interest", table="fts_pages", limit=1)
+    assert out["ok"] is True
+    assert out["total"] == 1
+    assert out["truncated"] is False
+
+
+def test_query_search_truncated_when_more_rows_exist(isolated_engine: None) -> None:
+    out = engine.query_search("banking OR football", table="fts_pages", limit=1)
+    assert out["ok"] is True
+    assert out["total"] == 1
+    assert out["truncated"] is True
+
+
+def test_query_select_not_truncated_at_exact_row_count(isolated_engine: None) -> None:
+    out = engine.query_select("SELECT url FROM pages", limit=2)
+    assert out["ok"] is True
+    assert out["total"] == 2
+    assert out["truncated"] is False
+
+
+def test_query_select_truncated_when_more_rows_exist(isolated_engine: None) -> None:
+    out = engine.query_select("SELECT url FROM pages", limit=1)
+    assert out["ok"] is True
+    assert out["total"] == 1
+    assert out["truncated"] is True
+
+
 def test_query_export_writes_csv(isolated_engine: None, tmp_path: Path) -> None:
     out_path = "out.csv"
     out = engine.query_export("pages", out_path, fmt="csv")
