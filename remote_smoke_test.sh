@@ -117,5 +117,25 @@ RESULT=$(call 15 query_export '{"table":"pages","out_path":"/app/exports/pages_e
 echo "$RESULT" | grep -Eq 'ok\\?":[[:space:]]*true' && pass "query_export wrote a real CSV file on the host" || fail "unexpected result: $RESULT"
 
 echo
-echo "ALL 13 DEPLOYED TOOLS PASSED against $DOMAIN"
+echo "===== boundary regression: truncated must be exact at the limit cap, not off-by-one ====="
+echo "A prior bug computed 'truncated' from a count already capped during collection,"
+echo "which is a false positive exactly when the true count equals the cap. query_select"
+echo "is tested with a self-contained WITH RECURSIVE query — no real crawled data needed,"
+echo "no side effects on the shared pages index that query_locate's count above depends on."
+echo "(query_search shares the identical fix in the same function shape, but a live"
+echo "boundary case for it would require fetching extra real distinct URLs into the"
+echo "shared production index, permanently growing it and breaking the pages-count"
+echo "check above — left to the unit tests instead.)"
+
+echo
+echo '== query_select: exactly limit=5 vs. one more row available =='
+RESULT=$(call 20 query_select '{"sql":"WITH RECURSIVE cnt(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM cnt WHERE x<5) SELECT x FROM cnt","limit":5}')
+echo "$RESULT" | grep -Eq '\\?"total\\?":[[:space:]]*5' || fail "expected exactly 5 rows, got: $RESULT"
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*false' && pass "query_select returning exactly 5 rows (limit=5) is NOT flagged truncated" || fail "false positive at exact cap: $RESULT"
+
+RESULT=$(call 21 query_select '{"sql":"WITH RECURSIVE cnt(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM cnt WHERE x<6) SELECT x FROM cnt","limit":5}')
+echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "query_select with 6 available rows and limit=5 IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
+
+echo
+echo "ALL 13 DEPLOYED TOOLS + boundary regression PASSED against $DOMAIN"
 echo "(crawl tier — 6 more tools — is not enabled on this deployment; see server logs / MCP_TIER_CRAWL)"
