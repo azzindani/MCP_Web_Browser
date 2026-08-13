@@ -275,7 +275,7 @@ class HttpWorker:
                 )
             self._breaker.success(domain)
             body: Any = text
-            if "json" in ct or text.lstrip().startswith(("{", "[")):
+            if "json" in ct or text.lstrip().startswith(("{{", "[")):
                 try:
                     import json as _json
 
@@ -392,7 +392,7 @@ class HttpWorker:
     def _parse_body(response: httpx.Response) -> tuple[Any, str]:
         text = response.text
         content_type = response.headers.get("content-type", "")
-        if "json" in content_type or text.lstrip().startswith(("{{", "[")):
+        if "json" in content_type or text.lstrip().startswith(("{", "[")):
             try:
                 return response.json(), text
             except ValueError:

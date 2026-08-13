@@ -79,6 +79,18 @@ async def test_fetch_yahoo_chart_extracts_price() -> None:
 
 
 @pytest.mark.asyncio
+async def test_json_object_sniffed_despite_wrong_content_type() -> None:
+    # Regression: the body-sniff fallback checked for a literal "{{" prefix
+    # instead of "{", so a JSON object served with an inaccurate/missing
+    # content-type header was silently treated as opaque HTML/text.
+    body = json.dumps({"hello": "world"})
+    worker = _make_worker(_fixed_handler(body, content_type="text/plain"))
+    result = await worker.fetch_one(Task(url="https://example.com/api", name="api"))
+    assert result.status == "ok"
+    assert result.extracted == {"hello": "world"}
+
+
+@pytest.mark.asyncio
 async def test_botwall_html_marks_blocked() -> None:
     body = "<html>checking your browser before access</html>"
     worker = _make_worker(_fixed_handler(body, content_type="text/html"))
