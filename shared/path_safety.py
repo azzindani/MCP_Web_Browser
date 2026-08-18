@@ -1,8 +1,9 @@
 """Resolve user-supplied paths to a safe absolute Path.
 
 `resolve_path` rejects traversal attempts (`..`), null bytes, and any
-target outside the configured root. The root defaults to the current
-working directory but can be overridden with `MCP_DATA_ROOT`.
+target outside the configured root. The root is `MCP_DATA_ROOT`, else the
+shared output directory `MCP_OUTPUT_DIR` this server's siblings write into,
+else the current working directory.
 """
 
 from __future__ import annotations
@@ -16,7 +17,13 @@ class UnsafePathError(ValueError):
 
 
 def _data_root() -> Path:
-    raw = os.environ.get("MCP_DATA_ROOT") or os.getcwd()
+    """Return the only directory paths may resolve inside.
+
+    Falls back to MCP_OUTPUT_DIR before cwd so an exported table lands in the
+    same shared directory every sibling MCP server writes to — inside a
+    container, cwd is /app, which nothing outside the container can read.
+    """
+    raw = os.environ.get("MCP_DATA_ROOT") or os.environ.get("MCP_OUTPUT_DIR") or os.getcwd()
     return Path(raw).expanduser().resolve(strict=False)
 
 

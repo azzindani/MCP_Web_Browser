@@ -34,6 +34,14 @@ services:
       WEB_OAUTH_STATE_DIR: /home/app/.oauth-state
       WEB_OAUTH_CLIENT_ID: ${WEB_OAUTH_CLIENT_ID:-}
       WEB_OAUTH_CLIENT_SECRET: ${WEB_OAUTH_CLIENT_SECRET:-}
+      # Hybrid file exchange — see README. query_export writes a real file, so
+      # it needs somewhere the caller can actually reach: MCP_OUTPUT_DIR is
+      # both the in-container mount point below and the root that
+      # shared/path_safety.py resolves relative paths against, so a bare
+      # filename lands in the shared directory instead of /app inside the
+      # container. MCP_DATA_ROOT still overrides it if you want them split.
+      MCP_OUTPUT_DIR: ${MCP_OUTPUT_DIR:-/files}
+      MCP_PUBLIC_BASE_URL: ${MCP_PUBLIC_BASE_URL:-}
     mem_limit: ${WEB_MEM_LIMIT:-2g}
     volumes:
       # Mount tokens.json read-only when WEB_TOKENS_FILE is set. Optional —
@@ -56,6 +64,10 @@ services:
       # if it's left root-owned, every write fails with "attempt to write
       # a readonly database" even though the file itself looks fine.
       - ./krawl.db:/app/krawl.db
+      # Shared output directory (see MCP_OUTPUT_DIR above). The container
+      # writes as uid/gid 999 (`app`), so `chown 999:999` the host directory
+      # before first run — left root-owned, every export fails with EACCES.
+      - ${MCP_SHARED_DIR:-./shared-files}:${MCP_OUTPUT_DIR:-/files}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8766/health', timeout=3)"]
       interval: 30s

@@ -24,6 +24,7 @@ from engine.workers.browser_worker import BrowserTask, BrowserWorker
 from engine.workers.crawl_worker import CrawlTask, CrawlWorker
 from engine.workers.http_worker import HttpWorker, Task
 from engine.workers.search_worker import SearchHit, SearchWorker
+from shared.exchange import public_url_for
 from shared.handover import next_step
 from shared.path_safety import resolve_path
 from shared.platform_utils import (
@@ -676,6 +677,7 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
         "ok": True,
         "op": "query_export",
         "path": str(target),
+        "public_url": public_url_for(target),
         "bytes": len(text),
         "progress": [ok("Exported", f"{table} → {target} ({len(text)} bytes, {fmt})")],
         "suggested_next": [next_step("query_stats", "check remaining table sizes")],

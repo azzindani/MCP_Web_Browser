@@ -189,7 +189,9 @@ All limits and storage paths flow through environment variables. Defaults are tu
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `MCP_DATA_ROOT` | current working directory | Root for `*.db`, `*.jsonl`, exports |
+| `MCP_DATA_ROOT` | `MCP_OUTPUT_DIR`, else cwd | Root for `*.db`, `*.jsonl`, exports |
+| `MCP_OUTPUT_DIR` | _(unset)_ | Shared output directory; `query_export` lands here and paths resolve against it |
+| `MCP_PUBLIC_BASE_URL` | _(unset)_ | Public URL serving `MCP_OUTPUT_DIR`; adds `public_url` to `query_export` |
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
 | `MCP_TIER_BASIC` | `1` | Toggle the Basic tier (`browse_*`) |
 | `MCP_TIER_QUERY` | `1` | Toggle the Query tier (`query_*`) |
@@ -211,6 +213,17 @@ All limits and storage paths flow through environment variables. Defaults are tu
 | Inspect body chars | 500 | 2 000 |
 
 ---
+
+### Where exports go
+
+`query_export` writes a real file. Unset, paths resolve against the working
+directory — which inside a container is `/app`, somewhere nothing outside the
+container can read. Set `MCP_OUTPUT_DIR` to a bind-mounted directory and a
+bare filename lands there instead, matching the sibling MCP servers; add
+`MCP_PUBLIC_BASE_URL` and the export comes back with a `public_url` you can
+open. `MCP_DATA_ROOT` still overrides both if you want the DB and the exports
+kept apart. The traversal guard is unchanged: a path resolving outside the
+root is refused either way.
 
 ## Deployment
 
