@@ -26,7 +26,7 @@ from engine.workers.http_worker import HttpWorker, Task
 from engine.workers.search_worker import SearchHit, SearchWorker
 from shared.exchange import public_url_for
 from shared.handover import next_step
-from shared.path_safety import resolve_path
+from shared.path_safety import export_root, resolve_path
 from shared.platform_utils import (
     get_inspect_chars,
     get_max_depth,
@@ -664,9 +664,10 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
         }
         res["token_estimate"] = _tok(res)
         return res
-    target = resolve_path(out_path)
-    snapshot(target)
-    atomic_write_text(target, text)
+    _export_root = export_root()
+    target = resolve_path(out_path, root=_export_root)
+    snapshot(target, root=_export_root)
+    atomic_write_text(target, text, root=_export_root)
     append_receipt(
         DEFAULTS.DB_PATH,
         op="query_export",
