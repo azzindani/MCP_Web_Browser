@@ -298,6 +298,14 @@ the real public domain) is a separate, manual/on-demand check — hand-authored
 `curl` sessions or a `remote_smoke_test.sh`, never wired into CI, never storing
 the live API key in the repo. `pytest` stays offline-only per STANDARDS.md.
 
+
+`tests/test_smoke_test_covers_every_tool.py` keeps that script honest: it reads
+every `@mcp.tool()` name out of the server modules' AST and fails if one never
+appears in `remote_smoke_test.sh`. Offline, so it runs in CI. It exists because
+a harness-driven sweep was once told to "list the tools then call each" for two
+servers, listed some and called none -- 19 tools silently unexercised, with the
+run still reporting a clean pass.
+
 ---
 
 ## 8. Progress Tracker
