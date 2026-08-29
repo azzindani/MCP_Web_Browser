@@ -2,7 +2,7 @@
   "include": ["engine/", "shared/", "server.py"],
   "exclude": ["**/.venv/**", "**/node_modules/**", "tests/"],
   "typeCheckingMode": "basic",
-  "pythonVersion": "3.12",
+  "pythonVersion": "3.14",
   "reportMissingImports": true,
   "reportMissingTypeStubs": false,
 

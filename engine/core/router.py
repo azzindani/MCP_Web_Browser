@@ -108,7 +108,7 @@ class Router:
                 )
                 for domain, entry in raw.items()
             }
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except json.JSONDecodeError, KeyError, TypeError:
             return {}
 
     def _save_cache(self) -> None:

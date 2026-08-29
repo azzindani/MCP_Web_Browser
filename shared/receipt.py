@@ -28,7 +28,7 @@ def append_receipt(
     if receipt_path.exists():
         try:
             entries = json.loads(receipt_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             entries = []
     entry: dict[str, Any] = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

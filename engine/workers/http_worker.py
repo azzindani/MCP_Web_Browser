@@ -132,7 +132,7 @@ def _parse_yahoo_chart(body: Any) -> dict[str, Any]:
             "exchange": meta.get("exchangeName") or "",
             "company": meta.get("longName") or "",
         }
-    except (KeyError, TypeError, IndexError, AttributeError):
+    except KeyError, TypeError, IndexError, AttributeError:
         return {}
 
 

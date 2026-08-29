@@ -61,7 +61,7 @@ class Checkpoint:
                     total_count=int(raw.get("total_count") or 0),
                     config=dict(raw.get("config") or {}),
                 )
-            except (json.JSONDecodeError, ValueError, TypeError):
+            except json.JSONDecodeError, ValueError, TypeError:
                 _stderr("checkpoint corrupt — starting fresh")
 
         return CheckpointData(run_id=run_id, saved_at=_now_iso(), config=dict(config))
