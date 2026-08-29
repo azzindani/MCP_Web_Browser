@@ -24,6 +24,15 @@ if [ -z "${WEB_API_KEY:-}" ] && [ -f .env ]; then
 fi
 KEY="${WEB_API_KEY:?Set WEB_API_KEY (env var or .env file) before running}"
 
+# query_export refuses any path outside the server's data root, so the target
+# cannot be hardcoded: this asked for /app/exports/pages_export.csv, which is
+# outside it on every deployment that sets one. The call failed with
+# "escapes data root" against the live endpoint as well as in CI -- the
+# assertion had simply never been run since the root was introduced.
+CONTAINER="${CONTAINER:-mcp-web-browser}"
+DATA_ROOT=$(docker exec "$CONTAINER" printenv MCP_OUTPUT_DIR 2>/dev/null || true)
+EXPORT_DIR="${DATA_ROOT:-/tmp}"
+
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; exit 1; }
 
@@ -120,8 +129,13 @@ echo "$RESULT" | grep -qi 'example.com' && pass "query_select ran real SQL again
 
 echo
 echo '== prompt: "export the indexed pages table to CSV" -> query_export =='
-RESULT=$(call 15 query_export '{"table":"pages","out_path":"/app/exports/pages_export.csv","fmt":"csv"}')
+EXPORT_PATH="$EXPORT_DIR/pages_export.csv"
+RESULT=$(call 15 query_export "{\"table\":\"pages\",\"out_path\":\"$EXPORT_PATH\",\"fmt\":\"csv\"}")
 echo "$RESULT" | grep -Eq 'ok\\?":[[:space:]]*true' && pass "query_export wrote a real CSV file on the host" || fail "unexpected result: $RESULT"
+docker exec "$CONTAINER" test -s "$EXPORT_PATH" \
+  && pass "the export is a real non-empty file on disk, not just a success message" \
+  || fail "query_export reported success but left no file at $EXPORT_PATH"
+docker exec "$CONTAINER" rm -f "$EXPORT_PATH" 2>/dev/null || true
 
 echo
 echo "===== boundary regression: truncated must be exact at the limit cap, not off-by-one ====="

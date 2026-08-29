@@ -126,3 +126,6 @@ jobs:
           public-host: browser.example.com
           mcp-path: /mcp
           health-timeout: "120"
+          create-dirs: "oauth-state"
+          create-files: krawl.db
+          shared-dir: shared-files
