@@ -298,8 +298,8 @@ requires a bearer token even while it's publicly reachable.
 
 ### Remote smoke test (`remote_smoke_test.sh`)
 
-Not part of pytest/CI — the separate, manual/on-demand check that exercises
-the real deployed HTTP endpoint: auth enforcement plus a real
+Run in CI against a container (the `e2e` job) and by hand against the
+deployment. `pytest` itself stays offline. Exercises a running HTTP endpoint: auth enforcement plus a real
 handwritten-prompt-style call for all **13 default-on tools** (Basic + Query
 tiers — `browse_status`, `browse_datetime`, `browse_locate`, `browse_inspect`,
 `browse_fetch`, `browse_verify`, `browse_extract`, `browse_search`,

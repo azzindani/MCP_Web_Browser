@@ -291,12 +291,28 @@ any fresh Linux VM): runs `uv run python server.py --transport http` directly
 plus a Cloudflare Quick Tunnel — NOT for production; unauthenticated at the
 tunnel level unless `WEB_API_KEY` / `WEB_TOKENS*` is set first.
 
-### Remote smoke tests (not part of pytest / CI)
+### Remote smoke tests (`remote_smoke_test.sh`)
 
-Verifying the deployed HTTP endpoint (auth enforcement, real tool calls against
-the real public domain) is a separate, manual/on-demand check — hand-authored
-`curl` sessions or a `remote_smoke_test.sh`, never wired into CI, never storing
-the live API key in the repo. `pytest` stays offline-only per STANDARDS.md.
+Verifying a running HTTP endpoint (auth enforcement, real tool calls) is what
+`remote_smoke_test.sh` covers, never storing the live API key in the repo.
+`pytest` stays offline-only per STANDARDS.md.
+
+It runs in **two** places: in CI via the `e2e` job, which starts the image with
+`docker compose` and runs this script against `http://localhost:<port>` with a
+throwaway key; and by hand against the deployment, which is still manual and
+still never stores the live API key in the repo. CI must not be pointed at the
+deployment -- CI runs on push and the redeploy happens after, so it would test
+the old server against the new code. Assertions needing deployment-only
+configuration (`MCP_FETCH_URLS`, a public base URL) skip in CI and run by hand.
+
+Read values out of the envelope with `\\?"key\\?"[[:space:]]*:`. A tool's
+document arrives as the JSON *string* `result.content[0].text`, so keys and
+values are escaped (`\"result\": 93`). Patterns written for unescaped JSON
+match nothing while every call still succeeds -- four of the six repos' scripts
+had silently stopped asserting anything after the official-SDK migration
+dropped `structuredContent`. Under `set -euo pipefail` an extractor matching
+nothing also aborts the script before its own `|| fail` runs, so end one with
+`|| true`.
 
 
 `tests/test_smoke_test_covers_every_tool.py` keeps that script honest: it reads
