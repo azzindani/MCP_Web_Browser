@@ -15,8 +15,12 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-https://browser.casava.space}"
-if [ -f .env ]; then
-  set -a; source .env; set +a
+# Read the key out of .env without executing it. `source` runs every line of
+# the file, so a line that is not a KEY=VALUE assignment is a command; that has
+# already turned a stray summary line into a file named after a secret. A plain
+# read of one assignment cannot do that.
+if [ -z "${WEB_API_KEY:-}" ] && [ -f .env ]; then
+  WEB_API_KEY=$(sed -n 's/^[[:space:]]*WEB_API_KEY[[:space:]]*=[[:space:]]*//p' .env | tail -n1 | tr -d '\042\047\r')
 fi
 KEY="${WEB_API_KEY:?Set WEB_API_KEY (env var or .env file) before running}"
 
@@ -73,7 +77,10 @@ echo "$RESULT" | grep -Eq 'ok\\?":[[:space:]]*true' && pass "browse_inspect(exam
 echo
 echo '== prompt: "fetch https://example.com and index it" -> browse_fetch =='
 RESULT=$(call 7 browse_fetch '{"url":"https://example.com"}')
-echo "$RESULT" | grep -q '"ok":true' && echo "$RESULT" | grep -q '"isError":false' \
+# "ok" is a field of the tool's own document, which arrives escaped inside the
+# envelope's text (\"ok\": true); "isError" belongs to the envelope itself and
+# does not. Every other assertion in this file already allows for the escaping.
+echo "$RESULT" | grep -Eq 'ok\\?":[[:space:]]*true' && echo "$RESULT" | grep -Eq '"isError":[[:space:]]*false' \
   && pass "browse_fetch(example.com) fetched + indexed the real page" || fail "unexpected result: $RESULT"
 
 echo
