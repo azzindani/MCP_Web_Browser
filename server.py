@@ -249,7 +249,24 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.transport == "http":
-        app.run(transport="streamable-http")
+        # uvicorn is driven here rather than through app.run("streamable-http")
+        # because the SDK builds uvicorn.Config without timeout_keep_alive, so
+        # the server closes an idle connection after uvicorn's 5s default and
+        # there is no way to say otherwise. A reverse proxy pools upstream
+        # connections far longer -- Caddy's default is 2 minutes -- so any
+        # connection idle between the two is dead here and live in the pool.
+        # Reusing one produced "aborting with incomplete response ... use of
+        # closed network connection" in the proxy, a 200 with zero bytes to the
+        # caller, and a client that hung until its own timeout with the tool
+        # call already executed. Measured: idle 2s reused fine, idle 7s closed.
+        import uvicorn
+
+        uvicorn.run(
+            app.streamable_http_app(),
+            host=app.settings.host,
+            port=app.settings.port,
+            timeout_keep_alive=int(os.environ.get("MCP_KEEPALIVE_SECONDS", "300")),
+        )
     else:
         app.run(transport="stdio")
 
