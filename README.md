@@ -23,7 +23,7 @@ A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud A
 ### Requirements
 
 - **Git** — `git --version`
-- **Python 3.12** — `python --version`
+- **Python 3.14** — `python --version`
 - **uv** — `uv --version` ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
 - **LM Studio** with a model that supports tool calling (Gemma 4, Qwen 3.5, etc.)
 - ~2 GB free disk for Playwright Chromium

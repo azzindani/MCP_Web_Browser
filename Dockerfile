@@ -4,14 +4,14 @@
 # templates/Dockerfile.single.template (see MCP_Math/templates/README.md).
 #
 # Two-stage build: uv sync into a venv + install Chromium, then copy venv +
-# source into a slim python:3.12 runtime with Chromium's system deps.
+# source into a slim python:3.14 runtime with Chromium's system deps.
 #
 # Build:  docker build -t mcp-web-browser:latest .
 # Run:    docker run --rm -p 8766:8766 mcp-web-browser:latest
 # Auth:   docker run --rm -p 8766:8766 -e WEB_API_KEY=secret mcp-web-browser:latest
 # ─────────────────────────────────────────────────────────────────────────────
 
-ARG PYTHON_VERSION=3.12-slim
+ARG PYTHON_VERSION=3.14-slim
 
 FROM python:${PYTHON_VERSION} AS builder
 WORKDIR /app

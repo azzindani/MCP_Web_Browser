@@ -3,7 +3,7 @@ name            = "mcp_web_browser"
 version         = "0.1.1"
 description     = "Self-hosted MCP server for end-to-end web access on local hardware"
 readme          = "README.md"
-requires-python = "==3.12.*"
+requires-python = "==3.14.*"
 license         = { text = "MIT" }
 authors         = [{ name = "Afza Azzindani" }]
 
