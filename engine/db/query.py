@@ -30,6 +30,24 @@ STATS_TABLES: Final[tuple[str, ...]] = (
 )
 
 
+# The actions a SELECT needs and nothing else. SQLITE_READ is a column read,
+# SQLITE_FUNCTION covers COUNT and friends, SQLITE_RECURSIVE a recursive CTE.
+# Everything absent from this set -- DELETE, INSERT, UPDATE, DROP, ATTACH,
+# PRAGMA, trigger and view creation -- is denied at compile time.
+_READ_ACTIONS: Final[frozenset[int]] = frozenset(
+    {
+        sqlite3.SQLITE_SELECT,
+        sqlite3.SQLITE_READ,
+        sqlite3.SQLITE_FUNCTION,
+        sqlite3.SQLITE_RECURSIVE,
+    }
+)
+
+
+def _read_only_authorizer(action: int, *_rest: Any) -> int:
+    return sqlite3.SQLITE_OK if action in _READ_ACTIONS else sqlite3.SQLITE_DENY
+
+
 class QueryEngine:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
@@ -59,13 +77,39 @@ class QueryEngine:
 
         The engine never builds SQL by string interpolation; values come
         through `params` and are bound as positional placeholders.
+
+        "SELECT-only" used to be a test on the first word, and SQLite puts a
+        `WITH` clause in front of DELETE, INSERT and UPDATE as ordinary
+        documented syntax. So `WITH x AS (SELECT 1) DELETE FROM pages` began
+        with `with`, was a single statement (so sqlite3's one-statement rule
+        did not catch it either), passed the guard, and emptied the table --
+        through a tool whose own docstring says SELECT-only, over HTTP, against
+        a read-write connection. Confirmed on the deployment before this fix.
+
+        The guarantee is now the authorizer, which SQLite calls while it
+        compiles the statement and hands the parsed action rather than a
+        prefix. A write is refused before a row is touched. The first-word
+        check stays in front of it only so the common mistake gets a sentence
+        a caller can act on.
         """
         stripped = sql.lstrip().lower()
         if not stripped.startswith("select") and not stripped.startswith("with"):
             raise ValueError("select() only accepts SELECT/WITH statements")
         cap = limit if limit is not None else get_max_rows()
-        cur = self._conn.execute(sql, params)
-        rows = cur.fetchmany(cap)
+        # Installed for the length of this statement and removed in `finally`.
+        # The connection is shared with the indexer, so a write racing this
+        # window is denied rather than corrupted -- the safe direction to fail,
+        # and a far smaller hazard than the one it replaces.
+        self._conn.set_authorizer(_read_only_authorizer)
+        try:
+            cur = self._conn.execute(sql, params)
+            rows = cur.fetchmany(cap)
+        except sqlite3.DatabaseError as exc:
+            if "not authorized" in str(exc).lower():
+                raise ValueError("select() runs read-only statements; this one writes or changes the schema") from exc
+            raise
+        finally:
+            self._conn.set_authorizer(None)
         return [dict(r) for r in rows]
 
     def stats(self) -> dict[str, int]:

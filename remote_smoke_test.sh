@@ -158,5 +158,39 @@ RESULT=$(call 21 query_select '{"sql":"WITH RECURSIVE cnt(x) AS (SELECT 1 UNION 
 echo "$RESULT" | grep -Eq '\\?"truncated\\?":[[:space:]]*true' && pass "query_select with 6 available rows and limit=5 IS flagged truncated" || fail "expected truncated:true, got: $RESULT"
 
 echo
+echo "===== security regression: SELECT-only must mean SELECT-only ====="
+echo "The guard was a test on the first word, and SQLite puts a WITH clause in"
+echo "front of DELETE, INSERT and UPDATE as documented syntax. So"
+echo "  WITH x AS (SELECT 1) DELETE FROM pages"
+echo "began with 'with', was a single statement, passed, and emptied the table —"
+echo "through a tool whose own docstring says SELECT-only, over HTTP. Found by"
+echo "round 23b and confirmed against the deployment with a WHERE that could"
+echo "match nothing. That WHERE stays here for the same reason: this assertion"
+echo "must not be able to destroy the index even if the fix is ever reverted."
+
+echo
+echo '== query_select: a WITH-prefixed DELETE is refused =='
+BEFORE=$(call 22 query_select '{"sql":"SELECT COUNT(*) AS n FROM pages","limit":1}')
+RESULT=$(call 23 query_select '{"sql":"WITH x AS (SELECT 1) DELETE FROM pages WHERE 1=0","limit":1}')
+echo "$RESULT" | grep -Eq '\\?"ok\\?":[[:space:]]*false' \
+  && pass "a WITH-prefixed DELETE is refused, not executed" \
+  || fail "SELECT-only accepted a DELETE: $RESULT"
+AFTER=$(call 24 query_select '{"sql":"SELECT COUNT(*) AS n FROM pages","limit":1}')
+N_BEFORE=$(echo "$BEFORE" | grep -oE '\\?"n\\?":[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' | head -1 || true)
+N_AFTER=$(echo "$AFTER" | grep -oE '\\?"n\\?":[[:space:]]*[0-9]+' | grep -oE '[0-9]+$' | head -1 || true)
+if [ -n "$N_BEFORE" ] && [ "$N_BEFORE" = "$N_AFTER" ]; then
+  pass "the pages table still holds $N_AFTER rows"
+else
+  fail "row count moved from ${N_BEFORE:-?} to ${N_AFTER:-?} across a refused DELETE"
+fi
+
+echo
+echo '== query_select: a read-only WITH still works =='
+RESULT=$(call 25 query_select '{"sql":"WITH x AS (SELECT url FROM pages) SELECT COUNT(*) AS n FROM x","limit":1}')
+echo "$RESULT" | grep -Eq '\\?"ok\\?":[[:space:]]*true' \
+  && pass "the fix did not break legitimate CTEs" \
+  || fail "a read-only WITH was refused: $RESULT"
+
+echo
 echo "ALL 13 DEPLOYED TOOLS + boundary regression PASSED against $DOMAIN"
 echo "(crawl tier — 6 more tools — is not enabled on this deployment; see server logs / MCP_TIER_CRAWL)"
