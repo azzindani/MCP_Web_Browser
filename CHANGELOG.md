@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.1.2 — 2026-09-01
+
+Source-only release: no wheel and no container image are published. Build the
+image from the `Dockerfile` here, or install from the tag.
+
+### Security
+
+- **`query_select` enforced read-only.** The tool documented and named itself
+  SELECT-only, then handed whatever it was given straight to SQLite. `DELETE`,
+  `UPDATE`, `DROP` and `ATTACH` all ran, including behind a leading `WITH`
+  clause that slipped past the prefix check. It is now gated by a
+  `sqlite3` authorizer that permits only `SELECT` / `READ` / `FUNCTION` /
+  `RECURSIVE`, so anything that writes or touches the schema is refused before
+  a row moves. `remote_smoke_test.sh` asserts the refusal on every run.
+
+### Fixed
+
+- `query_search` / `query_select` reported `truncated: true` when the result
+  landed exactly on the row cap, with nothing left to truncate.
+- A body-sniff typo classified JSON responses as HTML.
+- Long-lived HTTP connections are now held longer than a reverse proxy pools
+  them, so an idle connection is not reset mid-request.
+- `query_export` writes into the shared output directory and returns a
+  `public_url`, instead of a path only the container could reach.
+
+### Changed
+
+- Python 3.14 throughout; `ruff` targets `py314` and `pyright` is told which
+  interpreter it is checking.
+- `mcp` pinned `<2.0` — the v2 SDK is a breaking rework.
+- OAuth 2.0 bridge for claude.ai's Custom Connector.
+- `remote_smoke_test.sh` now runs in CI against a container, and a new test
+  fails the build if the repo defines a tool the smoke test never calls.
+
+### Note on v0.1.1
+
+`v0.1.1` (2026-08-05) was tagged without a changelog entry. It added the HTTP
+transport, the Docker deployment and the first version of
+`remote_smoke_test.sh`.
+
+---
+
 ## v0.1.0 — 2026-05-02
 
 First public release. A self-hosted MCP server that gives local LLMs end-to-end web access — no cloud APIs, no API keys.

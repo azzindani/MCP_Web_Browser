@@ -31,7 +31,7 @@ from shared.platform_utils import (
     get_search_limit,
 )
 
-_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("WEB_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("WEB_PORT", "8766"))
 _oauth_bridge = build_oauth_bridge("WEB")

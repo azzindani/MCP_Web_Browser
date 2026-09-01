@@ -2,9 +2,11 @@
 
 A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud APIs, no API keys — everything runs on your machine.
 
+**Release [`v0.1.2`](https://github.com/azzindani/MCP_Web_Browser/releases/tag/v0.1.2)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
+
 ## Features
 
-- **19 tools** across 3 tiers: basic (8), query (5), crawl (6)
+- **19 tools** across 3 tiers: basic (9), query (5), crawl (5)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for bounded, surgical web access
 - **Web search** — keyless: SearXNG → DuckDuckGo → Bing → Brave → Playwright Google/DDG fallback chain
 - **Deep research** — `browse_research` auto-chains search + fetch + optional re-search, returns pre-formatted `## Sources` citations
@@ -240,7 +242,7 @@ an empty index. The traversal guard applies to both roots either way.
 
 ```bash
 WEB_TRANSPORT=http WEB_PORT=8766 uv run python server.py
-curl http://localhost:8766/health   # {"status":"ok","version":"0.1.0"}
+curl http://localhost:8766/health   # {"status":"ok","version":"0.1.2"}
 ```
 
 ### Docker
