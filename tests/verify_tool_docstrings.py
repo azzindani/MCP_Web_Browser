@@ -32,7 +32,14 @@ def check() -> int:
             continue
         doc = ast.get_docstring(node) or ""
         first_line = doc.strip().splitlines()[0] if doc.strip() else ""
-        if len(first_line) > MAX_CHARS:
+        # The WHOLE docstring, not its first line: the MCP SDK sends
+        # func.__doc__ as the tool description, so a client pays for every
+        # line of it on every tools/list. A first-line check passes a
+        # three-paragraph docstring while this file's own summary claims to
+        # cap tool docstrings at 80 characters. It held only for as long as
+        # every tool here happened to be one line; MCP_Data_Analyst shipped a
+        # 301-character description that its copy of this gate called OK.
+        if len(doc) > MAX_CHARS:
             violations.append((node.name, len(first_line), first_line))
 
     if violations:
