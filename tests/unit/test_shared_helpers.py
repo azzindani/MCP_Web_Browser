@@ -10,7 +10,7 @@ from pathlib import Path
 
 from shared.handover import make_handover, next_step
 from shared.progress import fail, info, ok, undo, warn
-from shared.receipt import append_receipt
+from shared.receipt import append_receipt, read_receipt, read_receipt_log
 
 # ── progress helpers ───────────────────────────────────────────────────────────
 
@@ -60,11 +60,21 @@ def test_receipt_creates_file(tmp_path: Path) -> None:
     assert receipt.exists()
 
 
+# These four used to json.loads the receipt and index into it, which made each
+# of them a second implementation of the storage format. The format has a scope
+# header at index 0 now -- so that a caller reading two entries after twenty
+# calls can learn the log holds writes only, rather than concluding eighteen
+# operations vanished -- and hand-parsing put the header where an entry was
+# expected. `read_receipt_log` is the supported way in and knows every shape the
+# fleet has written. This repo had no reader at all until then, which is the
+# reason these tests were parsing the file in the first place.
+
+
 def test_receipt_appends_entries(tmp_path: Path) -> None:
     db = tmp_path / "krawl.db"
     append_receipt(db, op="browse_fetch", args={"url": "https://a.com"}, result="ok")
     append_receipt(db, op="crawl_run", args={"url": "https://b.com"}, result="5 pages")
-    entries = json.loads(Path(str(db) + ".mcp_receipt.json").read_text())
+    entries = read_receipt_log(db)
     assert len(entries) == 2
     assert entries[0]["op"] == "browse_fetch"
     assert entries[1]["op"] == "crawl_run"
@@ -79,8 +89,7 @@ def test_receipt_entry_fields(tmp_path: Path) -> None:
         result="1000 bytes",
         backup="/tmp/backup.bak",
     )
-    entries = json.loads(Path(str(db) + ".mcp_receipt.json").read_text())
-    e = entries[0]
+    e = read_receipt_log(db)[0]
     assert "ts" in e
     assert e["backup"] == "/tmp/backup.bak"
     assert e["args"]["table"] == "pages"
@@ -89,8 +98,9 @@ def test_receipt_entry_fields(tmp_path: Path) -> None:
 def test_receipt_no_backup_field_when_omitted(tmp_path: Path) -> None:
     db = tmp_path / "krawl.db"
     append_receipt(db, op="browse_fetch", args={}, result="ok")
-    entries = json.loads(Path(str(db) + ".mcp_receipt.json").read_text())
-    assert "backup" not in entries[0]
+    # This passed against the raw file for the wrong reason once the header
+    # existed: entries[0] was the header, which has no `backup` either.
+    assert "backup" not in read_receipt_log(db)[0]
 
 
 def test_receipt_survives_corrupt_json(tmp_path: Path) -> None:
@@ -99,8 +109,29 @@ def test_receipt_survives_corrupt_json(tmp_path: Path) -> None:
     receipt.write_text("INVALID JSON")  # corrupt the file
     # should not raise; starts fresh
     append_receipt(db, op="browse_fetch", args={}, result="ok")
-    entries = json.loads(receipt.read_text())
+    assert len(read_receipt_log(db)) == 1
+
+
+def test_the_log_says_what_it_holds(tmp_path: Path) -> None:
+    """A short log must be readable as scoped, not as a lost history."""
+    db = tmp_path / "krawl.db"
+    append_receipt(db, op="browse_fetch", args={}, result="ok")
+    entries, scope = read_receipt(db)
     assert len(entries) == 1
+    assert "mutations only" in scope
+
+
+def test_a_bare_array_written_before_the_header_still_reads(tmp_path: Path) -> None:
+    """Existing receipts do not become unreadable because the format grew."""
+    db = tmp_path / "krawl.db"
+    receipt = Path(str(db) + ".mcp_receipt.json")
+    receipt.write_text(json.dumps([{"ts": "2026-01-01T00:00:00Z", "op": "crawl_run", "result": "ok"}]))
+    entries, scope = read_receipt(db)
+    assert [e["op"] for e in entries] == ["crawl_run"]
+    assert "mutations only" in scope
+    # And appending to a v1 file upgrades it without losing what was there.
+    append_receipt(db, op="browse_fetch", args={}, result="ok")
+    assert [e["op"] for e in read_receipt_log(db)] == ["crawl_run", "browse_fetch"]
 
 
 # ── handover ─────────────────────────────────────────────────────────────────
