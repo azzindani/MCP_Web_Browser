@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`query_export` said "Returns path only" and returns thirteen fields.** Read
+  literally the sentence was false — `path`, `bytes`, `public_url`, `ok`, `op`,
+  `progress`, `suggested_next`, `token_estimate` and more all come back. Read as
+  intended, contrasting the path against the exported rows, it was true and
+  useful. It now says the thing it meant: *"Returns the path, never the rows."*
+  Behaviour unchanged.
+
+  Found by sweep round 24, whose axis was whether a tool's own description is
+  true — the same question that found this repo's `query_select` hole in round
+  23b.
+
 ## v0.1.2 — 2026-09-01
 
 Source-only release: no wheel and no container image are published. Build the

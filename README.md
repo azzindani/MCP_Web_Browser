@@ -159,7 +159,7 @@ Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools).
 | `query_locate` | List tables + row counts in the knowledge base. |
 | `query_search` | FTS5 full-text search across pages / news / files. |
 | `query_select` | SELECT-only SQL (parameterised). Bounded to max rows. |
-| `query_export` | Export table to CSV or JSON. Returns path only. |
+| `query_export` | Export table to CSV or JSON. Returns the path, never the rows. |
 | `query_stats` | Per-table row counts + db file size in bytes. |
 
 ### Crawl tier — `MCP_TIER_CRAWL=1` (6 tools, off by default)
