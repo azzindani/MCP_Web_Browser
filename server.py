@@ -148,7 +148,10 @@ if _enabled("MCP_TIER_QUERY", "1"):
 
     @app.tool()
     def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
-        """Export table to CSV/JSON. Returns path only."""
+        # "path only" meant "the path, not the rows" and was read as "the
+        # path and nothing else" -- it also returns bytes, public_url and
+        # the usual envelope. Say the thing that was actually meant.
+        """Export table to CSV/JSON. Returns the path, never the rows."""
         return engine.query_export(table, out_path, fmt=fmt)
 
     @app.tool()
