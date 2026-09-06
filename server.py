@@ -242,6 +242,7 @@ if _enabled("MCP_TIER_CRAWL", "0"):
             breadth=breadth if breadth is not None else get_research_breadth(),
         )
 
+
 # An argument name no tool declares is dropped by the bundled FastMCP's
 # pydantic model (extra="ignore") and the call succeeds anyway, so a
 # caller who guesses a parameter name is told nothing. Refuse it instead.
