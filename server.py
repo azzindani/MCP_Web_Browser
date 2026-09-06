@@ -24,6 +24,8 @@ from starlette.responses import JSONResponse
 
 import engine
 from deploy_auth import build_auth, build_oauth_bridge
+from shared.arg_errors import contract_errors
+from shared.envelope import mirror_success
 from shared.platform_utils import (
     get_research_breadth,
     get_research_depth,
@@ -243,9 +245,21 @@ if _enabled("MCP_TIER_CRAWL", "0"):
         )
 
 
+# This server answers `ok` where the other twenty-five endpoints answer
+# `success`. Both go out now; `ok` is unchanged. Installed first so it wraps the
+# tool bodies, which is where `ok` is written.
+mirror_success(app)
+
+# A known argument with the WRONG TYPE is rejected by pydantic before any tool
+# body runs, and escaped as a raw dump with no success/hint/token_estimate and a
+# pydantic.dev URL -- on a server whose whole point is that nothing leaves the
+# machine. Give it the fleet's failure shape instead.
+contract_errors(app)
+
 # An argument name no tool declares is dropped by the bundled FastMCP's
-# pydantic model (extra="ignore") and the call succeeds anyway, so a
-# caller who guesses a parameter name is told nothing. Refuse it instead.
+# pydantic model (extra="ignore") and the call succeeds anyway, so a caller who
+# guesses a parameter name is told nothing. Refuse it instead. Installed last so
+# it wraps the guards above and answers first.
 enforce_known_arguments(app)
 
 
