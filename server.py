@@ -30,6 +30,7 @@ from shared.platform_utils import (
     get_research_fetch_top,
     get_search_limit,
 )
+from shared.strict_args import enforce_known_arguments
 
 _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("WEB_HOST", "127.0.0.1")
@@ -240,6 +241,11 @@ if _enabled("MCP_TIER_CRAWL", "0"):
             limit=limit,
             breadth=breadth if breadth is not None else get_research_breadth(),
         )
+
+# An argument name no tool declares is dropped by the bundled FastMCP's
+# pydantic model (extra="ignore") and the call succeeds anyway, so a
+# caller who guesses a parameter name is told nothing. Refuse it instead.
+enforce_known_arguments(app)
 
 
 def main() -> None:
