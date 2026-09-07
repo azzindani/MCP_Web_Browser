@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import Annotated, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -32,6 +32,7 @@ from shared.platform_utils import (
     get_research_fetch_top,
     get_search_limit,
 )
+from shared.schema_enum import one_of
 from shared.strict_args import enforce_known_arguments
 
 _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
@@ -47,6 +48,15 @@ app: FastMCP = FastMCP(
     token_verifier=_token_verifier,
     auth=_auth_settings,
 )
+
+# The legal values each dispatch parameter names in its schema. Rendered
+# from the table the runtime switches on -- never a second copy -- and split
+# on TYPE_CHECKING because a call expression is not a type expression to a
+# static checker, while a checker only needs to know these are strings.
+if TYPE_CHECKING:
+    Mode = str
+else:
+    Mode = one_of("css", "xpath", "text", "regex", "similar")
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(app)
 
@@ -115,7 +125,7 @@ if _enabled("MCP_TIER_BASIC", "1"):
     async def browse_extract(
         url: str,
         selector: str,
-        mode: str = "css",
+        mode: Mode = "css",
         output_type: str = "text",
         limit: Annotated[int, Field(default=10, ge=1, le=100, description="Max elements to extract")] = 10,
     ) -> dict[str, Any]:
