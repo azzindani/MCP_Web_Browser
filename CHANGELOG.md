@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## v0.2.0 — 2026-09-07
+
+Source-only release: no wheel and no container image are published. Build the
+image from the `Dockerfile` here, or install from the tag.
+
+### Added
+
+- **`browse_extract.mode` declares its legal values** in `tools/list`, rendered
+  from the table the runtime switches on.
+
+### Fixed
+
+- **The response envelope carried `ok` but not `success`.** Every other server
+  in the fleet answers with `success`, so a client written against them read
+  this one's replies as neither succeeded nor failed. Both keys are now emitted
+  on all 13 default-on tools; `ok` is kept so nothing that already reads it
+  breaks.
+- **An argument-type error escaped the envelope**, arriving as a raw pydantic
+  dump with a link to pydantic.dev in it.
+
+### Changed
+
+- The README's tool total was right and its breakdown was not: "basic (9),
+  query (5), crawl (5)" is really 8, 5 and 6. Two errors that cancelled out,
+  which is why the 19 looked correct. The header comment in `server.py` had the
+  crawl count wrong the same way. Found by a new test that scans the source for
+  registered tools and fails if the README does not name each one.
+- 267 tests.
+
+## Unreleased — folded into v0.2.0
 
 ### Fixed
 

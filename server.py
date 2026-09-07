@@ -4,7 +4,7 @@ Tiers (each toggled by env var, default-on except crawl):
 
     MCP_TIER_BASIC=1   →  browse_*        (8 tools)
     MCP_TIER_QUERY=1   →  query_*         (5 tools)
-    MCP_TIER_CRAWL=0   →  crawl_*         (5 tools, off by default)
+    MCP_TIER_CRAWL=0   →  crawl_*         (6 tools, off by default)
 
 At most two tiers should be enabled at once on a constrained host so the
 combined schema budget stays within the model's context window. Engine
@@ -35,7 +35,7 @@ from shared.platform_utils import (
 from shared.schema_enum import one_of
 from shared.strict_args import enforce_known_arguments
 
-_VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.2.0"  # keep in sync with pyproject.toml [project].version
 _HOST = os.environ.get("WEB_HOST", "127.0.0.1")
 _PORT = int(os.environ.get("WEB_PORT", "8766"))
 _oauth_bridge = build_oauth_bridge("WEB")
