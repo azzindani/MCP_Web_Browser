@@ -128,6 +128,18 @@ def test_query_export_rejects_unknown_table(
     assert out["error"] == "unknown_table"
 
 
+def test_query_export_refuses_a_path_outside_the_data_folder(isolated_engine: None, tmp_path: Path) -> None:
+    """The refusal is an answer, not an exception: it escaped as "Error executing
+    tool query_export: /tmp/pages.csv escapes data root" on the deployed server."""
+    outside = tmp_path.parent / f"{tmp_path.name}-elsewhere" / "pages.csv"
+    out = engine.query_export("pages", str(outside))
+    assert out["ok"] is False
+    assert out["op"] == "query_export"
+    assert "escapes data root" in out["error"]
+    assert "data folder" in out["hint"]
+    assert not outside.exists()
+
+
 def test_query_stats_includes_db_bytes(isolated_engine: None) -> None:
     s = engine.query_stats()
     assert s["ok"] is True

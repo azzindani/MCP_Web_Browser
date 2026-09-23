@@ -26,7 +26,7 @@ from engine.workers.http_worker import HttpWorker, Task
 from engine.workers.search_worker import SearchHit, SearchWorker
 from shared.exchange import public_url_for
 from shared.handover import next_step
-from shared.path_safety import export_root, resolve_path
+from shared.path_safety import UnsafePathError, export_root, resolve_path
 from shared.platform_utils import (
     get_inspect_chars,
     get_max_depth,
@@ -646,6 +646,23 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
         }
         res["token_estimate"] = _tok(res)
         return res
+    # Resolved first, inside the answer: the refusal used to be raised past the
+    # tool as "Error executing tool query_export: ... escapes data root", with
+    # no ok/error/hint, and only after the whole table had been read.
+    _export_root = export_root()
+    try:
+        target = resolve_path(out_path, root=_export_root)
+    except UnsafePathError as exc:
+        res = {
+            "ok": False,
+            "op": "query_export",
+            "error": str(exc),
+            "hint": "out_path must lie inside the data folder; a relative path is written there",
+            "progress": [fail("Path refused", out_path)],
+            "suggested_next": [next_step("query_export", "retry with a relative out_path")],
+        }
+        res["token_estimate"] = _tok(res)
+        return res
     rt = runtime()
     try:
         if fmt == "csv":
@@ -664,8 +681,6 @@ def query_export(table: str, out_path: str, fmt: str = "csv") -> dict[str, Any]:
         }
         res["token_estimate"] = _tok(res)
         return res
-    _export_root = export_root()
-    target = resolve_path(out_path, root=_export_root)
     snapshot(target, root=_export_root)
     atomic_write_text(target, text, root=_export_root)
     append_receipt(

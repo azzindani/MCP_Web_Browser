@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`query_export` refused an `out_path` outside the data folder by raising.**
+  The refusal was right and its shape was not: the caller got "Error executing
+  tool query_export: /tmp/pages.csv escapes data root /workspace/data" with no
+  `ok`, `error` or `hint`, and only after the whole table had been read. The
+  path is now resolved first and refused in the usual envelope. Found by
+  driving the deployed tools directly.
+
 ## v0.2.0 — 2026-09-07
 
 Source-only release: no wheel and no container image are published. Build the
