@@ -41,10 +41,13 @@ DOCSTRING_CAP = 80
 
 
 def _registered_tools() -> dict[str, object]:
-    """Return the FastMCP tool registry as a {name: fn} mapping."""
-    mgr = server.app._tool_manager
-    tools = mgr.list_tools()
-    return {t.name: t for t in tools}
+    """Return the FastMCP tool registry as a {name: tool} mapping.
+
+    Every registered tool, listed or not: the originals are now actions of the
+    domain tools and leave tools/list, but they are still registered and still
+    answer under their own names (shared/retired.py).
+    """
+    return dict(server.app._tool_manager._tools)
 
 
 def test_default_tiers_register_basic_plus_query() -> None:

@@ -25,6 +25,7 @@ from starlette.responses import JSONResponse
 import engine
 from deploy_auth import build_auth, build_oauth_bridge
 from shared.arg_errors import contract_errors
+from shared.domain_tools import register_domains
 from shared.envelope import mirror_success
 from shared.platform_utils import (
     get_research_breadth,
@@ -32,6 +33,7 @@ from shared.platform_utils import (
     get_research_fetch_top,
     get_search_limit,
 )
+from shared.retired import retire
 from shared.schema_enum import one_of
 from shared.strict_args import enforce_known_arguments
 
@@ -254,6 +256,50 @@ if _enabled("MCP_TIER_CRAWL", "0"):
             breadth=breadth if breadth is not None else get_research_breadth(),
         )
 
+
+# ── One endpoint, fewer tools ──────────────────────────────────────
+# Every tool above becomes an `action` of a domain tool -- browse the live web,
+# query the local store, crawl a site -- so tools/list names two or three tools
+# instead of every one (shared/domain_tools.py). The originals leave the list
+# and keep answering under their own names, unchanged, for every client that
+# already calls them (shared/retired.py). Built from what is registered, so a
+# tier switched off contributes no actions.
+_DOMAIN_SUMMARIES = {
+    "browse": "The live web: search, probe, inspect, fetch, verify, extract, research.",
+    "query": "The local store of fetched pages: locate, search, SQL select, export, stats.",
+    "crawl": "Crawl a site in the background: locate, plan, run, resume.",
+}
+DOMAINS = {
+    domain: (summary, [(app, name) for name in list(app._tool_manager._tools) if name.startswith(f"{domain}_")])
+    for domain, summary in _DOMAIN_SUMMARIES.items()
+}
+DOMAINS = {domain: spec for domain, spec in DOMAINS.items() if spec[1]}
+register_domains(app, DOMAINS)
+retire(
+    app,
+    {name: f"{domain}(action={name!r})" for domain, (_, members) in DOMAINS.items() for _, name in members},
+    note=False,
+)
+
+
+def _answer_with_ok(name: str) -> None:
+    """A domain tool's own refusals carry `ok` too; every action's answer already does."""
+    tool = app._tool_manager._tools[name]
+    inner = tool.fn
+
+    async def answered(*a: Any, **kw: Any) -> Any:
+        result = await inner(*a, **kw)
+        if isinstance(result, dict) and "ok" not in result and "success" in result:
+            result = {"ok": result["success"], **result}
+        return result
+
+    answered.__name__ = inner.__name__
+    answered.__doc__ = inner.__doc__
+    tool.fn = answered
+
+
+for _domain in DOMAINS:
+    _answer_with_ok(_domain)
 
 # This server answers `ok` where the other twenty-five endpoints answer
 # `success`. Both go out now; `ok` is unchanged. Installed first so it wraps the

@@ -6,6 +6,7 @@ A self-hosted MCP server that gives local LLMs end-to-end web access. No cloud A
 
 ## Features
 
+- **Two tools listed** by default — `browse` (the live web) and `query` (the local store), plus `crawl` when that tier is on. Each takes an `action` (one of the 19 tools below, by its own name) and an `args` object whose every property says which actions take it. The 19 originals no longer appear in `tools/list` but still answer under their own names, unchanged
 - **19 tools** across 3 tiers: basic (8), query (5), crawl (6) — 13 of them on by default, crawl being opt-in
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for bounded, surgical web access
 - **Web search** — keyless: SearXNG → DuckDuckGo → Bing → Brave → Playwright Google/DDG fallback chain
@@ -136,6 +137,20 @@ Replace the `"command"` and `"args"` with the bash equivalent:
 ---
 
 ## Available Tools
+
+`tools/list` names the domain tools; every tool below is one of their actions:
+
+```json
+{"action": "browse_fetch", "args": {"url": "https://example.com"}}
+```
+
+| Tool | Actions |
+|---|---|
+| `browse` | the `browse_*` tools |
+| `query` | the `query_*` tools |
+| `crawl` | the `crawl_*` tools (only when `MCP_TIER_CRAWL=1`) |
+
+An original name called directly still works, so no existing client breaks.
 
 Tiers are toggled by environment variable. Default-on: Basic + Query (13 tools). Crawl is off by default. On constrained hosts with a strict 12-tool ceiling, disable Query (`MCP_TIER_QUERY=0`) or Crawl to stay under the cap.
 

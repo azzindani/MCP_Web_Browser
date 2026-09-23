@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### Changed — one endpoint, fewer tools
+
+- `tools/list` names two tools by default, `browse` and `query` (and `crawl`
+  when that tier is on), instead of thirteen. Each takes an `action` -- one of
+  the original tools, by its own name -- and an `args` object whose properties
+  say which actions take them, in the Pipeline server's shape
+  (`shared/domain_tools.py`, byte-identical across the fleet). Each action runs
+  the original tool, so its answer is unchanged, `ok` and `success` included.
+  The originals leave the list and keep answering under their own names
+  (`shared/retired.py`), so no client that already calls them breaks.
+
 ### Fixed
 
 - **`query_export` refused an `out_path` outside the data folder by raising.**
