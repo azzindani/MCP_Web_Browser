@@ -989,7 +989,7 @@ async def extract_from_url(
             "mode": mode,
             "error": extraction.error,
             "progress": [fail("Extraction failed", extraction.error or "")],
-            "hint": f"Check {mode} selector syntax. Use browse_inspect() to preview the page.",
+            "hint": extraction.hint or f"Check {mode} selector syntax. Use browse_inspect() to preview the page.",
             "suggested_next": [next_step("browse_inspect", "preview page HTML structure")],
         }
         res["token_estimate"] = _tok(res)

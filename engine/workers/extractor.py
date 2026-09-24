@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Any
 
+from shared.regex_guard import Guard, PatternTimeout
+
 lxml_html: Any = None
 _LXML = False
 try:
@@ -37,6 +39,10 @@ _SKIP_TAGS: frozenset[str] = frozenset({"script", "style", "meta", "link", "nosc
 _SKIP_SCHEMES: tuple[str, ...] = ("javascript:", "mailto:", "tel:", "data:")
 
 
+# Elements per round trip to the regex worker.
+_REGEX_BATCH = 500
+
+
 @dataclass
 class ExtractionResult:
     ok: bool
@@ -47,6 +53,7 @@ class ExtractionResult:
     count: int = 0
     truncated: bool = False
     error: str | None = None
+    hint: str | None = None  # what to do about `error`, when the tool's generic hint would mislead
 
 
 # ── helpers ────────────────────────────────────────────────────────────
@@ -227,7 +234,7 @@ class HtmlExtractor:
     ) -> ExtractionResult:
         """Find elements whose visible text matches a regex pattern."""
         try:
-            compiled = re.compile(pattern, re.IGNORECASE | re.DOTALL)
+            guard = Guard(pattern, re.IGNORECASE | re.DOTALL)
         except re.error as exc:
             return ExtractionResult(
                 ok=False,
@@ -236,15 +243,41 @@ class HtmlExtractor:
                 output_type=output_type,
                 error=str(exc),
             )
+        # Matched in a worker the server can stop (shared/regex_guard): the
+        # pattern is the caller's and `re` has no timeout, so one with nested
+        # repeats held this call for good. Elements go in batches, in page
+        # order, and the walk still stops at the same match as before.
         matched: list[Any] = []
-        for el in self._doc.iter():
-            if str(el.tag) in _SKIP_TAGS:
-                continue
-            inner = " ".join(el.itertext()).strip()
-            if compiled.search(inner):
-                matched.append(el)
-                if len(matched) >= limit * 4:
-                    break
+        batch: list[tuple[Any, str]] = []
+
+        def flush() -> bool:
+            for (el, _), hit in zip(batch, guard.found([t for _, t in batch]), strict=True):
+                if hit:
+                    matched.append(el)
+                    if len(matched) >= limit * 4:
+                        return True
+            batch.clear()
+            return False
+
+        try:
+            with guard:
+                for el in self._doc.iter():
+                    if str(el.tag) in _SKIP_TAGS:
+                        continue
+                    batch.append((el, " ".join(el.itertext()).strip()))
+                    if len(batch) >= _REGEX_BATCH and flush():
+                        break
+                else:
+                    flush()
+        except PatternTimeout as exc:
+            return ExtractionResult(
+                ok=False,
+                selector=pattern,
+                mode="regex",
+                output_type=output_type,
+                error=str(exc),
+                hint="Use mode='text' to match the words literally, or rewrite the pattern without nested repeats.",
+            )
         return ExtractionResult(
             ok=True,
             selector=pattern,

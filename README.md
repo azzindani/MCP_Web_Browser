@@ -210,6 +210,7 @@ All limits and storage paths flow through environment variables. Defaults are tu
 | `MCP_OUTPUT_DIR` | `MCP_DATA_ROOT` | Shared output directory `query_export` writes into |
 | `MCP_PUBLIC_BASE_URL` | _(unset)_ | Public URL serving `MCP_OUTPUT_DIR`; adds `public_url` to `query_export` |
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
+| `MCP_REGEX_SECONDS` | `10` (`5` constrained) | Matching time one call's regular expression may use; a pattern still running is stopped and refused by name |
 | `MCP_TIER_BASIC` | `1` | Toggle the Basic tier (`browse_*`) |
 | `MCP_TIER_QUERY` | `1` | Toggle the Query tier (`query_*`) |
 | `MCP_TIER_CRAWL` | `0` | Toggle the Crawl tier (`crawl_*`) |
