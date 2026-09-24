@@ -14,29 +14,38 @@ thousand files is not the pattern's fault -- and when it runs out the worker
 is killed and PatternTimeout names the pattern. A literal (`re.escape`d) query
 cannot backtrack and never needs this.
 
-MCP_Documents' `find` has done the same since it measured `(\\s*\\w+)+$` still
-running after 120s on one page (core/scan.py). This is that guard made
-general: one worker for a whole call, fed in batches, not one per page. The
-third-party `regex` module was tried first for its in-process timeout. It
-fired 1.5-3x late (a 2s limit raised at 6.1s) and once let a 3.2s match
-finish under a 2s limit, so it is not the guard.
+The worker is a plain `python -c` child that runs this one file, which
+imports nothing but the standard library, and it talks over its own stdin and
+stdout. Two alternatives were measured first and rejected:
+
+- the third-party `regex` module's in-process timeout fired 1.5-3x late (a 2s
+  limit raised at 6.1s), and once let a 3.2s match finish under a 2s limit;
+- multiprocessing, as MCP_Documents' core/scan.py uses it: forkserver and
+  spawn both import the server's own __main__ into the worker. In the DA
+  container that left a 256 MB forkserver resident and took 18s to start
+  under load, to run one pattern.
 
 The same file ships in DA, FS, Documents and Web_Browser.
 """
 
 from __future__ import annotations
 
-import multiprocessing as mp
 import os
+import pickle
+import queue
 import re
+import struct
+import subprocess
+import sys
+import threading
 import time
-from typing import Any
+from typing import IO, Any
 
 # Texts per message: one round trip per batch rather than per cell or line.
 BATCH = 5000
-# How long a worker may take to start. Not charged to the pattern: on macOS and
-# Windows a spawned worker re-imports the server before it can match anything.
-START_SECONDS = 120.0
+# How long a worker may take to start. Not charged to the pattern.
+START_SECONDS = 60.0
+_WORKER = "__regex_worker__"
 
 
 def seconds() -> float:
@@ -61,6 +70,23 @@ class PatternTimeout(ValueError):
         self.limit = limit
 
 
+def _send(stream: IO[bytes], obj: Any) -> None:
+    data = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
+    stream.write(struct.pack(">Q", len(data)) + data)
+    stream.flush()
+
+
+def _recv(stream: IO[bytes]) -> Any:
+    head = stream.read(8)
+    if len(head) < 8:
+        raise EOFError
+    (size,) = struct.unpack(">Q", head)
+    data = stream.read(size)
+    if len(data) < size:
+        raise EOFError
+    return pickle.loads(data)
+
+
 def _answer(compiled: re.Pattern[str], op: str, payload: Any) -> Any:
     if op == "found":
         return [compiled.search(t) is not None for t in payload]
@@ -80,19 +106,31 @@ def _answer(compiled: re.Pattern[str], op: str, payload: Any) -> Any:
     raise ValueError(f"unknown op {op!r}")
 
 
-def _serve(conn: Any, pattern: str, flags: int) -> None:
-    """The worker: compile once, say so, then answer until told to stop."""
+def _serve() -> None:
+    """The worker: compile once, say so, then answer until the input closes."""
+    stdin, stdout = sys.stdin.buffer, sys.stdout.buffer
+    pattern, flags = _recv(stdin)
     compiled = re.compile(pattern, flags)
-    conn.send(("ready", None))
+    _send(stdout, ("ready", None))
     while True:
-        message = conn.recv()
-        if message is None:
-            break
         try:
-            conn.send(("ok", _answer(compiled, *message)))
+            message = _recv(stdin)
+        except EOFError:
+            return
+        try:
+            _send(stdout, ("ok", _answer(compiled, *message)))
         except re.error as exc:  # e.g. a group the replacement names but the pattern lacks
-            conn.send(("re.error", str(exc)))
-    conn.close()
+            _send(stdout, ("re.error", str(exc)))
+
+
+def _read(stream: IO[bytes], answers: queue.Queue[tuple[str, Any]]) -> None:
+    """The server's side: every answer the worker sends, then one 'eof'."""
+    while True:
+        try:
+            answers.put(_recv(stream))
+        except EOFError, OSError, ValueError, pickle.UnpicklingError:
+            answers.put(("eof", None))
+            return
 
 
 class Guard:
@@ -109,8 +147,8 @@ class Guard:
         self.flags = flags
         self.limit = seconds() if limit is None else limit
         self.spent = 0.0
-        self._process: Any = None
-        self._conn: Any = None
+        self._process: subprocess.Popen[bytes] | None = None
+        self._answers: queue.Queue[tuple[str, Any]] = queue.Queue()
 
     def __enter__(self) -> Guard:
         return self
@@ -118,52 +156,51 @@ class Guard:
     def __exit__(self, *_exc: object) -> None:
         self.close()
 
-    def _start(self) -> Any:
-        # The platform DEFAULT start method, as in MCP_Documents' core/scan.py:
-        # forkserver on Linux since 3.14, spawn on macOS and Windows -- none of
-        # them inherits a lock another thread of the server holds. Plain fork
-        # does, so it is never used.
-        ctx = mp.get_context()
-        process_type = ctx.Process
-        if ctx.get_start_method() == "fork":
-            process_type = mp.get_context("spawn").Process
-        mine, theirs = ctx.Pipe()
-        process = process_type(target=_serve, args=(theirs, self.pattern, self.flags), daemon=True)
+    def _start(self) -> subprocess.Popen[bytes]:
+        code = f"import runpy; runpy.run_path({os.path.abspath(__file__)!r}, run_name={_WORKER!r})"
+        process = subprocess.Popen(
+            [sys.executable, "-c", code],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+        )
+        self._process = process
+        self._answers = queue.Queue()  # a dead worker's 'eof' must not answer the next one
+        assert process.stdin is not None and process.stdout is not None
+        threading.Thread(target=_read, args=(process.stdout, self._answers), daemon=True).start()
+        _send(process.stdin, (self.pattern, self.flags))
         try:
-            process.start()
-        except BaseException:
-            mine.close()
-            raise
-        finally:
-            theirs.close()  # the worker holds its own end; ours must go or a dead worker is never noticed
-        self._process, self._conn = process, mine
-        if not mine.poll(START_SECONDS):
-            self.close()
+            kind, _ = self._answers.get(timeout=START_SECONDS)
+        except queue.Empty:
+            kind = "eof"
+        if kind != "ready":
+            self.close(stuck=True)
             raise RuntimeError(f"the worker for pattern {self.pattern!r} did not start")
-        mine.recv()
-        return mine
+        return process
 
     def _ask(self, op: str, payload: Any) -> Any:
-        conn = self._conn if self._conn is not None else self._start()
+        process = self._process if self._process is not None else self._start()
+        assert process.stdin is not None
         left = self.limit - self.spent
         if left <= 0:
             self.close(stuck=True)
             raise PatternTimeout(self.pattern, self.limit)
         began = time.monotonic()
-        conn.send((op, payload))
-        answered = conn.poll(left)
-        self.spent += time.monotonic() - began
-        if not answered:
-            self.close(stuck=True)
-            raise PatternTimeout(self.pattern, self.limit)
         try:
-            kind, answer = conn.recv()
-        except EOFError:
+            _send(process.stdin, (op, payload))
+            kind, answer = self._answers.get(timeout=left)
+        except queue.Empty:
             self.close(stuck=True)
-            message = f"the worker matching {self.pattern!r} stopped without answering"
-            raise RuntimeError(message) from None
+            raise PatternTimeout(self.pattern, self.limit) from None
+        except OSError:
+            kind, answer = "eof", None
+        finally:
+            self.spent += time.monotonic() - began
+        if kind == "eof":
+            self.close(stuck=True)
+            raise RuntimeError(f"the worker matching {self.pattern!r} stopped without answering")
         if kind == "re.error":
-            raise re.error(answer)
+            raise re.error(str(answer))
         return answer
 
     def found(self, texts: list[str]) -> list[bool]:
@@ -189,19 +226,27 @@ class Guard:
         return new, n
 
     def close(self, stuck: bool = False) -> None:
-        """Stop the worker: asked to finish, or -- `stuck` in a match -- terminated at once."""
-        conn, process = self._conn, self._process
-        self._conn = self._process = None
-        if conn is not None:
-            if not stuck:
-                try:
-                    conn.send(None)
-                except OSError, ValueError:
-                    pass
-            conn.close()
-        if process is not None:
-            if not stuck:
-                process.join(timeout=1)
-            if process.is_alive():
-                process.terminate()
-                process.join(timeout=5)
+        """Stop the worker: its input closed so it ends, or -- `stuck` in a match -- killed at once."""
+        process, self._process = self._process, None
+        if process is None:
+            return
+        if not stuck:
+            try:
+                if process.stdin is not None:
+                    process.stdin.close()
+                process.wait(timeout=1)
+            except OSError, subprocess.TimeoutExpired:
+                pass
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        for stream in (process.stdin, process.stdout):
+            try:
+                if stream is not None:
+                    stream.close()
+            except OSError:
+                pass
+
+
+if __name__ == _WORKER:
+    _serve()
